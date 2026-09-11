@@ -12,14 +12,16 @@ test.describe('NeuroSys Root Routing & Protection Suite', () => {
     expect(pageText).toContain('Sign In');
   });
 
-  test('TEST 2: Clicking Sign In from Landing Page navigates to "/login"', async ({ page }) => {
+  test('TEST 2: Clicking Sign In from Landing Page ALWAYS displays the Login page', async ({ page }) => {
     await page.goto('/');
     await page.click('button:has-text("Sign In"), a:has-text("Sign In")');
     await page.waitForURL('**/login');
     
     expect(page.url()).toContain('/login');
     const bodyText = await page.innerText('body');
-    expect(bodyText).toMatch(/(Sign In|Login|Password)/i);
+    expect(bodyText).toContain('Sign In to Console');
+    expect(bodyText).toContain('Username / Email');
+    expect(page.locator('input[type="text"], input[type="email"]')).toBeVisible();
   });
 
   test('TEST 3: Login with valid credentials redirects to "/select-lab" / Dashboard', async ({ page }) => {

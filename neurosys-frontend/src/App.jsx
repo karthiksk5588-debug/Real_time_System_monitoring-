@@ -27,20 +27,13 @@ const ProtectedRoute = ({ children }) => {
 };
 
 function AppRoutes() {
-  const { isAuthenticated } = useAuth();
-
   return (
     <Routes>
-      {/* 1. Public Landing Page at "/" - ALWAYS renders existing LandingPage */}
+      {/* 1. Public Landing Page at "/" - ALWAYS renders LandingPage */}
       <Route path="/" element={<LandingPage />} />
 
-      {/* 2. Login Page at "/login" - Redirects to /select-lab if authenticated */}
-      <Route 
-        path="/login" 
-        element={
-          isAuthenticated ? <Navigate to="/select-lab" replace /> : <Login />
-        } 
-      />
+      {/* 2. Login Page at "/login" - ALWAYS renders Login page when clicked */}
+      <Route path="/login" element={<Login />} />
 
       {/* 3. Post-Login Lab Selection Page */}
       <Route
