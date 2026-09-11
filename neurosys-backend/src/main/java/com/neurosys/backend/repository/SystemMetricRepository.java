@@ -3,10 +3,12 @@ package com.neurosys.backend.repository;
 import com.neurosys.backend.entity.SystemMetric;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
@@ -28,4 +30,8 @@ public interface SystemMetricRepository extends JpaRepository<SystemMetric, Long
 
     @Query("SELECT AVG(sm.networkRxBytesSec + sm.networkTxBytesSec) FROM SystemMetric sm WHERE sm.recordedAt >= CURRENT_TIMESTAMP - 5 MINUTE")
     Double findFleetAverageNetworkThroughput();
+
+    @Modifying
+    @Query("DELETE FROM SystemMetric sm WHERE sm.recordedAt < :cutoff")
+    int deleteMetricsOlderThan(@Param("cutoff") Instant cutoff);
 }
