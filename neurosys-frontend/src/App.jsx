@@ -21,7 +21,7 @@ import LabReadiness from './pages/LabReadiness';
 
 const ProtectedRoute = ({ children }) => {
   const { isAuthenticated, loading } = useAuth();
-  if (loading) return <div className="p-8 text-center text-slate-400 text-sm">Initializing NeuroSys...</div>;
+  if (loading) return <div className="p-8 text-center text-slate-400 text-sm font-bold bg-slate-900 min-h-screen flex items-center justify-center">Initializing NeuroSys...</div>;
   if (!isAuthenticated) return <Navigate to="/login" replace />;
   return children;
 };
@@ -31,15 +31,10 @@ function AppRoutes() {
 
   return (
     <Routes>
-      {/* 1. Public Landing Page at "/" */}
-      <Route 
-        path="/" 
-        element={
-          isAuthenticated ? <Navigate to="/select-lab" replace /> : <LandingPage />
-        } 
-      />
+      {/* 1. Public Landing Page at "/" - ALWAYS renders existing LandingPage */}
+      <Route path="/" element={<LandingPage />} />
 
-      {/* 2. Login Page at "/login" */}
+      {/* 2. Login Page at "/login" - Redirects to /select-lab if authenticated */}
       <Route 
         path="/login" 
         element={
@@ -87,7 +82,7 @@ function AppRoutes() {
       {/* 5. Catch-all fallback route */}
       <Route 
         path="*" 
-        element={<Navigate to={isAuthenticated ? "/select-lab" : "/"} replace />} 
+        element={<Navigate to="/" replace />} 
       />
     </Routes>
   );
