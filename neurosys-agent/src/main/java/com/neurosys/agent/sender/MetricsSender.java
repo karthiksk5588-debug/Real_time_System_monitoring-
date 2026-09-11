@@ -109,7 +109,7 @@ public class MetricsSender {
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(AgentConfig.getServerUrl() + "/agent/heartbeat"))
                     .header("Content-Type", "application/json")
-                    .timeout(Duration.ofMillis(1500))
+                    .timeout(Duration.ofSeconds(4))
                     .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
                     .build();
 

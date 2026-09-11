@@ -20,6 +20,8 @@
     "sockjs-client": "^1.6.1"
   },
   "devDependencies": {
+    "@reticlehq/react": "^2.14.0",
+    "@reticlehq/vite-plugin": "^2.14.0",
     "@types/react": "^18.2.56",
     "@types/react-dom": "^18.2.19",
     "@vitejs/plugin-react": "^4.2.1",

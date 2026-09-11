@@ -27,12 +27,12 @@ public class OfflineDetectionScheduler {
     private final HeartbeatTrackerService heartbeatTracker;
     private final WebSocketMetricsPublisher webSocketMetricsPublisher;
 
-    @Scheduled(fixedRate = 1000) // Runs every 1 second for instant ~1-2s offline detection
+    @Scheduled(fixedRate = 3000) // Runs every 3 seconds for stable heartbeat evaluation
     @Transactional
     public void detectOfflineComputers() {
         try {
-            // 2-second tolerance threshold for network delay
-            Instant threshold = Instant.now().minus(2, ChronoUnit.SECONDS);
+            // 10-second tolerance threshold for network delay and smooth UI state
+            Instant threshold = Instant.now().minus(10, ChronoUnit.SECONDS);
             Map<String, Instant> heartbeatMap = heartbeatTracker.getLastHeartbeatMap();
 
             List<Computer> onlineComputers = computerRepository.findAll().stream()
@@ -52,7 +52,7 @@ public class OfflineDetectionScheduler {
 
                 if (lastSeen == null || lastSeen.isBefore(threshold)) {
                     ComputerStatus oldStatus = c.getStatus();
-                    log.info("[REAL-TIME DETECT] PC {} ({}) missed heartbeat (>2s). Status changed {} → OFFLINE", 
+                    log.info("[REAL-TIME DETECT] PC {} ({}) missed heartbeat (>10s). Status changed {} → OFFLINE", 
                             c.getHostname(), c.getAgentId(), oldStatus);
 
                     c.setStatus(ComputerStatus.OFFLINE);
@@ -60,7 +60,7 @@ public class OfflineDetectionScheduler {
                     computerRepository.save(c);
 
                     // Broadcast real-time status change event to all WebSocket & SSE clients
-                    webSocketMetricsPublisher.broadcastStatusChange(c, ComputerStatus.OFFLINE, "Connection lost / Heartbeat stopped (>2s)");
+                    webSocketMetricsPublisher.broadcastStatusChange(c, ComputerStatus.OFFLINE, "Connection lost / Heartbeat stopped (>10s)");
                     alertEngineService.triggerOfflineAlert(c);
                 }
             }
