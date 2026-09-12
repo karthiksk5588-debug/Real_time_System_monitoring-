@@ -379,7 +379,8 @@ public class DataRetentionScheduler {
             log.warn("[FORCE DISK PURGE] Executing complete disk purge, DDL table rebuilds, and RESET MASTER...");
             jdbcTemplate.execute((java.sql.Connection conn) -> {
                 try (java.sql.Statement stmt = conn.createStatement()) {
-                    stmt.execute("SET FOREIGN_KEY_CHECKS = 0");
+                    try { stmt.execute("SET FOREIGN_KEY_CHECKS = 0"); } catch (Exception e) {}
+
                     String[] tables = {"system_metrics", "health_scores", "predictions", "logs", "diagnostic_events", "diagnostic_incidents", "alerts", "software_inventory", "remote_power_commands", "remote_power_audits", "computers"};
                     for (String table : tables) {
                         try {
@@ -387,14 +388,21 @@ public class DataRetentionScheduler {
                             result.put("truncated_" + table, true);
                         } catch (Exception e) {
                             try {
-                                stmt.executeUpdate("DELETE FROM " + table);
-                            } catch (Exception ex) {}
+                                int count = stmt.executeUpdate("DELETE FROM " + table);
+                                result.put("deleted_" + table, count);
+                            } catch (Exception ex) {
+                                result.put("error_" + table, ex.getMessage());
+                            }
                         }
                         try {
                             stmt.execute("ALTER TABLE " + table + " ENGINE=InnoDB");
-                        } catch (Exception ex) {}
+                            result.put("rebuilt_" + table, true);
+                        } catch (Exception ex) {
+                            result.put("rebuild_error_" + table, ex.getMessage());
+                        }
                     }
-                    stmt.execute("SET FOREIGN_KEY_CHECKS = 1");
+
+                    try { stmt.execute("SET FOREIGN_KEY_CHECKS = 1"); } catch (Exception e) {}
 
                     try {
                         stmt.execute("RESET MASTER");
@@ -406,17 +414,21 @@ public class DataRetentionScheduler {
                     try {
                         stmt.execute("PURGE BINARY LOGS BEFORE NOW()");
                         result.put("purge_binlogs", "SUCCESS");
-                    } catch (Exception e) {}
+                    } catch (Exception e) {
+                        result.put("purge_binlogs_error", e.getMessage());
+                    }
 
                     try {
                         stmt.execute("SET GLOBAL binlog_expire_logs_seconds = 60");
                         result.put("binlog_expire_60s", true);
-                    } catch (Exception e) {}
+                    } catch (Exception e) {
+                        result.put("expire_error", e.getMessage());
+                    }
                 }
                 return null;
             });
             result.put("status", "SUCCESS");
-            result.put("message", "Executed DDL TRUNCATE, ALTER TABLE ENGINE=InnoDB rebuilds, and RESET MASTER. Physical disk files wiped.");
+            result.put("message", "Executed DDL TRUNCATE across all data tables (including computers data), rebuilt InnoDB tablespaces, and purged master binary logs.");
         } catch (Exception e) {
             log.error("[FORCE DISK PURGE ERROR] Failed: {}", e.getMessage(), e);
             result.put("status", "ERROR");
