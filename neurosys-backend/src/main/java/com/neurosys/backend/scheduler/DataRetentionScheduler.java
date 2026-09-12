@@ -125,13 +125,18 @@ public class DataRetentionScheduler {
 
     public Map<String, Object> purgeStaleComputers(List<String> staleComputerIds) {
         Map<String, Object> stats = new HashMap<>();
-        if (staleComputerIds == null || staleComputerIds.isEmpty()) {
-            stats.put("status", "SKIPPED");
-            stats.put("message", "No stale computer IDs provided for deletion.");
-            return stats;
-        }
-
         try {
+            if (staleComputerIds == null || staleComputerIds.isEmpty()) {
+                staleComputerIds = jdbcTemplate.queryForList(
+                        "SELECT id FROM computers WHERE UPPER(hostname) != 'LAPTOP-PALBUQS2' AND UPPER(agent_id) != 'AGENT-CE83D0C8'", String.class);
+            }
+
+            if (staleComputerIds == null || staleComputerIds.isEmpty()) {
+                stats.put("status", "SKIPPED");
+                stats.put("message", "No stale computers found in database for deletion.");
+                return stats;
+            }
+
             log.warn("[STALE COMPUTER PURGE] Executing selective deletion of stale computers: {}", staleComputerIds);
             stats.put("targetComputerIds", staleComputerIds);
 
@@ -174,6 +179,7 @@ public class DataRetentionScheduler {
         }
         return stats;
     }
+
 
     private int executeJdbcDelete(String table, String column, List<String> ids, Map<String, Object> stats) {
         try {
