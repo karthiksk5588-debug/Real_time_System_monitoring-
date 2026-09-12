@@ -205,17 +205,23 @@ public class DataRetentionScheduler {
     private int executeJdbcDelete(String table, String column, List<String> ids, Map<String, Object> stats) {
         try {
             String idList = ids.stream().map(id -> "'" + id.replace("'", "") + "'").collect(Collectors.joining(","));
-            String sql = "DELETE FROM " + table + " WHERE " + column + " IN (" + idList + ")";
-            int count = jdbcTemplate.update(sql);
-            log.info("[STALE COMPUTER PURGE] Deleted {} rows from {}", count, table);
-            stats.put("deleted_" + table, count);
-            return count;
+            String sql = "DELETE FROM " + table + " WHERE " + column + " IN (" + idList + ") LIMIT 500";
+            int total = 0;
+            for (int i = 0; i < 200; i++) {
+                int count = jdbcTemplate.update(sql);
+                total += count;
+                if (count == 0) break;
+            }
+            log.info("[STALE COMPUTER PURGE] Deleted total {} rows from {}", total, table);
+            stats.put("deleted_" + table, total);
+            return total;
         } catch (Exception e) {
             log.warn("[STALE COMPUTER PURGE SKIP] Could not delete from table {}: {}", table, e.getMessage());
             stats.put("error_" + table, e.getMessage());
             return 0;
         }
     }
+
 }
 
 
