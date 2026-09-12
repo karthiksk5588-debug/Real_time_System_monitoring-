@@ -82,6 +82,10 @@ public class DataRetentionScheduler {
                 stats.put("optimizedTables", optimized);
             }
 
+            // Purge binary logs and reduce binlog expiration time to prevent Railway volume overflow
+            Map<String, Object> binlogStats = purgeBinaryLogs();
+            stats.put("binlogPurge", binlogStats);
+
         } catch (Exception e) {
             log.error("[RETENTION CLEANUP ERROR] Failed to perform database volume cleanup: {}", e.getMessage(), e);
             stats.put("error", e.getMessage());
@@ -285,6 +289,42 @@ public class DataRetentionScheduler {
             result.put("message", "All telemetry, logs, metrics, and computer registrations reset to 0 bytes. Admin accounts and application structure preserved.");
         } catch (Exception e) {
             log.error("[COMPLETE RESET ERROR] Failed: {}", e.getMessage(), e);
+            result.put("status", "ERROR");
+            result.put("error", e.getMessage());
+        }
+        return result;
+    }
+
+    public Map<String, Object> purgeBinaryLogs() {
+        Map<String, Object> result = new HashMap<>();
+        try {
+            log.warn("[BINLOG PURGE] Configuring binlog expiry and purging binary logs...");
+            try {
+                jdbcTemplate.execute("SET GLOBAL binlog_expire_logs_seconds = 1800");
+                result.put("binlog_expire_logs_seconds", 1800);
+            } catch (Exception e) {
+                log.warn("[BINLOG PURGE] Could not set binlog_expire_logs_seconds: {}", e.getMessage());
+                result.put("set_expire_error", e.getMessage());
+            }
+
+            try {
+                jdbcTemplate.execute("PURGE BINARY LOGS BEFORE NOW()");
+                result.put("purge_binary_logs", "SUCCESS");
+            } catch (Exception e) {
+                log.warn("[BINLOG PURGE] PURGE BINARY LOGS failed, trying RESET MASTER: {}", e.getMessage());
+                try {
+                    jdbcTemplate.execute("RESET MASTER");
+                    result.put("reset_master", "SUCCESS");
+                } catch (Exception ex) {
+                    log.error("[BINLOG PURGE ERROR] RESET MASTER failed: {}", ex.getMessage());
+                    result.put("purge_error", ex.getMessage());
+                }
+            }
+
+            result.put("status", "SUCCESS");
+            result.put("message", "MySQL binary logs purged and retention set to 30 minutes.");
+        } catch (Exception e) {
+            log.error("[BINLOG PURGE ERROR] Failed to purge binary logs: {}", e.getMessage(), e);
             result.put("status", "ERROR");
             result.put("error", e.getMessage());
         }

@@ -85,6 +85,14 @@ public class SystemMaintenanceController {
         Map<String, Object> result = dataRetentionScheduler.resetAllDataIncludingComputers();
         return ResponseEntity.ok(result);
     }
+
+    @PostMapping("/purge-binlogs")
+    @Operation(summary = "Purge MySQL Binary Logs", description = "Executes PURGE BINARY LOGS / RESET MASTER and configures binlog expiration to 30 minutes to free Railway disk volume space.")
+    public ResponseEntity<Map<String, Object>> purgeBinlogs() {
+        log.warn("[ADMIN MAINTENANCE] Manual binary log purge requested...");
+        Map<String, Object> result = dataRetentionScheduler.purgeBinaryLogs();
+        return ResponseEntity.ok(result);
+    }
 }
 
 
