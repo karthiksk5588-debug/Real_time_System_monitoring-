@@ -133,30 +133,19 @@ public class DataRetentionScheduler {
         try {
             log.warn("[STALE COMPUTER PURGE] Executing selective deletion of stale computers: {}", staleComputerIds);
 
-            int metrics = entityManager.createNativeQuery("DELETE FROM system_metrics WHERE computer_id IN :ids")
-                    .setParameter("ids", staleComputerIds).executeUpdate();
-            int health = entityManager.createNativeQuery("DELETE FROM health_scores WHERE computer_id IN :ids")
-                    .setParameter("ids", staleComputerIds).executeUpdate();
-            int alerts = entityManager.createNativeQuery("DELETE FROM alerts WHERE computer_id IN :ids")
-                    .setParameter("ids", staleComputerIds).executeUpdate();
-            int predictions = entityManager.createNativeQuery("DELETE FROM predictions WHERE computer_id IN :ids")
-                    .setParameter("ids", staleComputerIds).executeUpdate();
-            int logs = entityManager.createNativeQuery("DELETE FROM logs WHERE computer_id IN :ids")
-                    .setParameter("ids", staleComputerIds).executeUpdate();
-            int software = entityManager.createNativeQuery("DELETE FROM software_inventory WHERE computer_id IN :ids")
-                    .setParameter("ids", staleComputerIds).executeUpdate();
-            int diagEvents = entityManager.createNativeQuery("DELETE FROM diagnostic_events WHERE computer_id IN :ids")
-                    .setParameter("ids", staleComputerIds).executeUpdate();
-            int diagIncidents = entityManager.createNativeQuery("DELETE FROM diagnostic_incidents WHERE computer_id IN :ids")
-                    .setParameter("ids", staleComputerIds).executeUpdate();
-            int powerCmds = entityManager.createNativeQuery("DELETE FROM remote_power_commands WHERE computer_id IN :ids")
-                    .setParameter("ids", staleComputerIds).executeUpdate();
-            int powerAudits = entityManager.createNativeQuery("DELETE FROM remote_power_audits WHERE computer_id IN :ids")
-                    .setParameter("ids", staleComputerIds).executeUpdate();
+            int metrics = executeNativeDelete("system_metrics", "computer_id", staleComputerIds);
+            int health = executeNativeDelete("health_scores", "computer_id", staleComputerIds);
+            int alerts = executeNativeDelete("alerts", "computer_id", staleComputerIds);
+            int predictions = executeNativeDelete("predictions", "computer_id", staleComputerIds);
+            int logs = executeNativeDelete("logs", "computer_id", staleComputerIds);
+            int software = executeNativeDelete("software_inventory", "computer_id", staleComputerIds);
+            int diagEvents = executeNativeDelete("diagnostic_events", "computer_id", staleComputerIds);
+            int diagIncidents = executeNativeDelete("diagnostic_incidents", "computer_id", staleComputerIds);
+            int powerCmds = executeNativeDelete("remote_power_commands", "computer_id", staleComputerIds);
+            int powerAudits = executeNativeDelete("remote_power_audits", "computer_id", staleComputerIds);
 
-            // Finally delete computer records
-            int computers = entityManager.createNativeQuery("DELETE FROM computers WHERE id IN :ids")
-                    .setParameter("ids", staleComputerIds).executeUpdate();
+            // Delete computer records
+            int computers = executeNativeDelete("computers", "id", staleComputerIds);
 
             stats.put("deletedComputers", computers);
             stats.put("deletedMetrics", metrics);
@@ -183,6 +172,18 @@ public class DataRetentionScheduler {
         }
         return stats;
     }
+
+    private int executeNativeDelete(String table, String column, List<String> ids) {
+        try {
+            return entityManager.createNativeQuery("DELETE FROM " + table + " WHERE " + column + " IN (:ids)")
+                    .setParameter("ids", ids)
+                    .executeUpdate();
+        } catch (Exception e) {
+            log.warn("[STALE COMPUTER PURGE SKIP] Failed to delete from {}: {}", table, e.getMessage());
+            return 0;
+        }
+    }
 }
+
 
 
