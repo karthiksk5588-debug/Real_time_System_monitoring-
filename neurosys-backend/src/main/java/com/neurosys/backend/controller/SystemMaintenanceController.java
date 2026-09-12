@@ -6,6 +6,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -92,6 +93,12 @@ public class SystemMaintenanceController {
         log.warn("[ADMIN MAINTENANCE] Manual binary log purge requested...");
         Map<String, Object> result = dataRetentionScheduler.purgeBinaryLogs();
         return ResponseEntity.ok(result);
+    }
+
+    @GetMapping("/storage-breakdown")
+    @Operation(summary = "Get Database Storage Breakdown", description = "Inspects table sizes, free space, and InnoDB file sizes to diagnose Railway disk volume usage.")
+    public ResponseEntity<Map<String, Object>> getStorageBreakdown() {
+        return ResponseEntity.ok(dataRetentionScheduler.getStorageBreakdown());
     }
 }
 

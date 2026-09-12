@@ -330,6 +330,33 @@ public class DataRetentionScheduler {
         }
         return result;
     }
+
+    public Map<String, Object> getStorageBreakdown() {
+        Map<String, Object> result = new HashMap<>();
+        try {
+            List<Map<String, Object>> tables = jdbcTemplate.queryForList(
+                    "SELECT table_name, round(((data_length + index_length) / 1024 / 1024), 2) AS size_mb, " +
+                    "round((data_free / 1024 / 1024), 2) AS free_mb, table_rows " +
+                    "FROM information_schema.TABLES WHERE table_schema = DATABASE() ORDER BY (data_length + index_length) DESC");
+            result.put("tables", tables);
+
+            try {
+                List<Map<String, Object>> files = jdbcTemplate.queryForList(
+                        "SELECT file_name, file_type, round((total_extents * extent_size / 1024 / 1024), 2) AS size_mb " +
+                        "FROM information_schema.FILES");
+                result.put("files", files);
+            } catch (Exception e) {
+                result.put("files_error", e.getMessage());
+            }
+
+            result.put("status", "SUCCESS");
+        } catch (Exception e) {
+            log.error("[STORAGE BREAKDOWN ERROR] Failed: {}", e.getMessage(), e);
+            result.put("status", "ERROR");
+            result.put("error", e.getMessage());
+        }
+        return result;
+    }
 }
 
 
