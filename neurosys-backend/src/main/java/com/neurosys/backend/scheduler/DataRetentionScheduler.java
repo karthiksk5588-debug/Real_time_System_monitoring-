@@ -158,41 +158,49 @@ public class DataRetentionScheduler {
                 return stats;
             }
 
-            log.warn("[STALE COMPUTER PURGE] Executing selective deletion of stale computers: {}", staleComputerIds);
+            log.warn("[STALE COMPUTER PURGE] Executing selective deletion of stale computers with disabled FK checks: {}", staleComputerIds);
             stats.put("targetComputerIds", staleComputerIds);
 
-            int metrics = executeJdbcDelete("system_metrics", "computer_id", staleComputerIds, stats);
-            int health = executeJdbcDelete("health_scores", "computer_id", staleComputerIds, stats);
-            int alerts = executeJdbcDelete("alerts", "computer_id", staleComputerIds, stats);
-            int predictions = executeJdbcDelete("predictions", "computer_id", staleComputerIds, stats);
-            int logs = executeJdbcDelete("logs", "computer_id", staleComputerIds, stats);
-            int software = executeJdbcDelete("software_inventory", "computer_id", staleComputerIds, stats);
-            int diagEvents = executeJdbcDelete("diagnostic_events", "computer_id", staleComputerIds, stats);
-            int diagIncidents = executeJdbcDelete("diagnostic_incidents", "computer_id", staleComputerIds, stats);
-            int powerCmds = executeJdbcDelete("remote_power_commands", "computer_id", staleComputerIds, stats);
-            int powerAudits = executeJdbcDelete("remote_power_audits", "computer_id", staleComputerIds, stats);
+            // Disable foreign key checks for clean batch deletion without undo log/cascade bottlenecks
+            try {
+                jdbcTemplate.execute("SET FOREIGN_KEY_CHECKS = 0");
 
-            // Delete computer records
-            int computers = executeJdbcDelete("computers", "id", staleComputerIds, stats);
+                int metrics = executeJdbcDelete("system_metrics", "computer_id", staleComputerIds, stats);
+                int health = executeJdbcDelete("health_scores", "computer_id", staleComputerIds, stats);
+                int alerts = executeJdbcDelete("alerts", "computer_id", staleComputerIds, stats);
+                int predictions = executeJdbcDelete("predictions", "computer_id", staleComputerIds, stats);
+                int logs = executeJdbcDelete("logs", "computer_id", staleComputerIds, stats);
+                int software = executeJdbcDelete("software_inventory", "computer_id", staleComputerIds, stats);
+                int diagEvents = executeJdbcDelete("diagnostic_events", "computer_id", staleComputerIds, stats);
+                int diagIncidents = executeJdbcDelete("diagnostic_incidents", "computer_id", staleComputerIds, stats);
+                int powerCmds = executeJdbcDelete("remote_power_commands", "computer_id", staleComputerIds, stats);
+                int powerAudits = executeJdbcDelete("remote_power_audits", "computer_id", staleComputerIds, stats);
 
-            stats.put("deletedComputers", computers);
-            stats.put("deletedMetrics", metrics);
-            stats.put("deletedHealthScores", health);
-            stats.put("deletedAlerts", alerts);
-            stats.put("deletedPredictions", predictions);
-            stats.put("deletedLogs", logs);
-            stats.put("deletedSoftware", software);
-            stats.put("deletedDiagEvents", diagEvents);
-            stats.put("deletedDiagIncidents", diagIncidents);
-            stats.put("deletedPowerCmds", powerCmds);
-            stats.put("deletedPowerAudits", powerAudits);
+                // Delete computer records
+                int computers = executeJdbcDelete("computers", "id", staleComputerIds, stats);
+
+                stats.put("deletedComputers", computers);
+                stats.put("deletedMetrics", metrics);
+                stats.put("deletedHealthScores", health);
+                stats.put("deletedAlerts", alerts);
+                stats.put("deletedPredictions", predictions);
+                stats.put("deletedLogs", logs);
+                stats.put("deletedSoftware", software);
+                stats.put("deletedDiagEvents", diagEvents);
+                stats.put("deletedDiagIncidents", diagIncidents);
+                stats.put("deletedPowerCmds", powerCmds);
+                stats.put("deletedPowerAudits", powerAudits);
+
+            } finally {
+                jdbcTemplate.execute("SET FOREIGN_KEY_CHECKS = 1");
+            }
 
             // Execute OPTIMIZE TABLE to shrink physical disk storage
             List<String> optimized = optimizeTables();
             stats.put("optimizedTables", optimized);
             stats.put("status", "SUCCESS");
 
-            log.info("[STALE COMPUTER PURGE SUCCESS] Deleted {} stale computers, {} metrics, {} logs and optimized volume.", computers, metrics, logs);
+            log.info("[STALE COMPUTER PURGE SUCCESS] Purged stale computers and optimized MySQL volume.");
         } catch (Exception e) {
             log.error("[STALE COMPUTER PURGE ERROR] Failed to purge stale computers: {}", e.getMessage(), e);
             stats.put("status", "ERROR");
@@ -205,9 +213,9 @@ public class DataRetentionScheduler {
     private int executeJdbcDelete(String table, String column, List<String> ids, Map<String, Object> stats) {
         try {
             String idList = ids.stream().map(id -> "'" + id.replace("'", "") + "'").collect(Collectors.joining(","));
-            String sql = "DELETE FROM " + table + " WHERE " + column + " IN (" + idList + ") LIMIT 500";
+            String sql = "DELETE FROM " + table + " WHERE " + column + " IN (" + idList + ") LIMIT 50";
             int total = 0;
-            for (int i = 0; i < 200; i++) {
+            for (int i = 0; i < 500; i++) {
                 int count = jdbcTemplate.update(sql);
                 total += count;
                 if (count == 0) break;
@@ -221,6 +229,7 @@ public class DataRetentionScheduler {
             return 0;
         }
     }
+
 
 }
 
