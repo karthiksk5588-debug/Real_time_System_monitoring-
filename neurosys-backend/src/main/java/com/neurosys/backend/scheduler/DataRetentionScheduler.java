@@ -95,16 +95,19 @@ public class DataRetentionScheduler {
 
     public List<String> optimizeTables() {
         List<String> optimized = new ArrayList<>();
-        String[] tables = {"system_metrics", "diagnostic_events", "system_logs", "predictions", "alerts"};
+        String[] tables = {"system_metrics", "diagnostic_events", "logs", "predictions", "alerts", "health_scores", "software_inventory"};
         for (String table : tables) {
             try {
-                // Execute MySQL OPTIMIZE TABLE to shrink physical disk .ibd files
-                jdbcTemplate.execute("OPTIMIZE TABLE " + table);
+                jdbcTemplate.execute("ALTER TABLE " + table + " ENGINE=InnoDB");
                 optimized.add(table);
-                log.info("[VOLUME OPTIMIZE] Successfully executed OPTIMIZE TABLE {} to reclaim disk volume space.", table);
+                log.info("[VOLUME OPTIMIZE] Rebuilt {} (ALTER TABLE ENGINE=InnoDB) to shrink physical disk file.", table);
             } catch (Exception e) {
-                // Silently absorb for non-MySQL or non-supported DB engines (e.g. H2 test DB)
-                log.debug("[VOLUME OPTIMIZE SKIP] Could not execute OPTIMIZE TABLE for {}: {}", table, e.getMessage());
+                try {
+                    jdbcTemplate.execute("OPTIMIZE TABLE " + table);
+                    optimized.add(table);
+                } catch (Exception ex) {
+                    log.debug("[VOLUME OPTIMIZE SKIP] Could not optimize table {}: {}", table, ex.getMessage());
+                }
             }
         }
         return optimized;
