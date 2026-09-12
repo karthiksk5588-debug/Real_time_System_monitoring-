@@ -248,7 +248,50 @@ public class DataRetentionScheduler {
         }
         return result;
     }
+
+    public Map<String, Object> resetAllDataIncludingComputers() {
+
+        Map<String, Object> result = new HashMap<>();
+        try {
+            log.warn("[COMPLETE DATA RESET] Purging all telemetry, metrics, logs, health scores, software inventory, and computer endpoints...");
+            String[] tables = {"system_metrics", "health_scores", "predictions", "logs", "diagnostic_events", "diagnostic_incidents", "alerts", "software_inventory", "remote_power_commands", "remote_power_audits", "computers"};
+
+            jdbcTemplate.execute((java.sql.Connection conn) -> {
+                try (java.sql.Statement stmt = conn.createStatement()) {
+                    stmt.execute("SET FOREIGN_KEY_CHECKS = 0");
+                    for (String table : tables) {
+                        try {
+                            stmt.execute("TRUNCATE TABLE " + table);
+                            result.put("truncated_" + table, true);
+                            log.info("[COMPLETE RESET] Truncated {}", table);
+                        } catch (Exception e) {
+                            try {
+                                int count = stmt.executeUpdate("DELETE FROM " + table);
+                                result.put("deleted_" + table, count);
+                                log.info("[COMPLETE RESET FALLBACK] Deleted {} rows from {}", count, table);
+                            } catch (Exception ex) {
+                                result.put("error_" + table, ex.getMessage());
+                            }
+                        }
+                    }
+                    stmt.execute("SET FOREIGN_KEY_CHECKS = 1");
+                }
+                return null;
+            });
+
+            List<String> optimized = optimizeTables();
+            result.put("optimizedTables", optimized);
+            result.put("status", "SUCCESS");
+            result.put("message", "All telemetry, logs, metrics, and computer registrations reset to 0 bytes. Admin accounts and application structure preserved.");
+        } catch (Exception e) {
+            log.error("[COMPLETE RESET ERROR] Failed: {}", e.getMessage(), e);
+            result.put("status", "ERROR");
+            result.put("error", e.getMessage());
+        }
+        return result;
+    }
 }
+
 
 
 

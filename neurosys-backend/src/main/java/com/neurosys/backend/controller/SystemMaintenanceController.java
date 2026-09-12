@@ -77,7 +77,16 @@ public class SystemMaintenanceController {
         Map<String, Object> result = dataRetentionScheduler.purgeAllTelemetryAndLogs();
         return ResponseEntity.ok(result);
     }
+
+    @PostMapping("/reset-all-data")
+    @Operation(summary = "Reset All Database Data Tables to 0 Bytes", description = "Wipes all telemetry, metrics, logs, health scores, AI predictions, alerts, software inventory, and computer endpoints to drop DB size to 0 MB while preserving users, auth, and schema structure.")
+    public ResponseEntity<Map<String, Object>> resetAllData() {
+        log.warn("[ADMIN MAINTENANCE] Manual complete data reset requested...");
+        Map<String, Object> result = dataRetentionScheduler.resetAllDataIncludingComputers();
+        return ResponseEntity.ok(result);
+    }
 }
+
 
 
 
