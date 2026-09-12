@@ -49,5 +49,18 @@ public class SystemMaintenanceController {
         result.put("optimizedTables", optimized);
         return ResponseEntity.ok(result);
     }
+
+    @PostMapping("/purge-stale-computers")
+    @Operation(summary = "Purge Stale Unused Computers and Telemetry", description = "Selectively purges specified stale computers and their metrics, logs, health scores, and alerts without affecting active computers or system config.")
+    public ResponseEntity<Map<String, Object>> purgeStaleComputers(@org.springframework.web.bind.annotation.RequestBody(required = false) List<String> staleComputerIds) {
+        if (staleComputerIds == null || staleComputerIds.isEmpty()) {
+            // Default target stale computer IDs identified during DB inspection
+            staleComputerIds = List.of("446529e2-d335-458e-b88a-80aea13e95a2", "b388c2c5-d6d2-4b2c-b730-d2fd7224412e");
+        }
+        log.warn("[ADMIN MAINTENANCE] Selectively purging stale computers: {}", staleComputerIds);
+        Map<String, Object> result = dataRetentionScheduler.purgeStaleComputers(staleComputerIds);
+        return ResponseEntity.ok(result);
+    }
 }
+
 

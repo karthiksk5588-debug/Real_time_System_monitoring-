@@ -120,5 +120,69 @@ public class DataRetentionScheduler {
         }
         return result;
     }
+
+    @Transactional
+    public Map<String, Object> purgeStaleComputers(List<String> staleComputerIds) {
+        Map<String, Object> stats = new HashMap<>();
+        if (staleComputerIds == null || staleComputerIds.isEmpty()) {
+            stats.put("status", "SKIPPED");
+            stats.put("message", "No stale computer IDs provided for deletion.");
+            return stats;
+        }
+
+        try {
+            log.warn("[STALE COMPUTER PURGE] Executing selective deletion of stale computers: {}", staleComputerIds);
+
+            int metrics = entityManager.createNativeQuery("DELETE FROM system_metrics WHERE computer_id IN :ids")
+                    .setParameter("ids", staleComputerIds).executeUpdate();
+            int health = entityManager.createNativeQuery("DELETE FROM health_scores WHERE computer_id IN :ids")
+                    .setParameter("ids", staleComputerIds).executeUpdate();
+            int alerts = entityManager.createNativeQuery("DELETE FROM alerts WHERE computer_id IN :ids")
+                    .setParameter("ids", staleComputerIds).executeUpdate();
+            int predictions = entityManager.createNativeQuery("DELETE FROM predictions WHERE computer_id IN :ids")
+                    .setParameter("ids", staleComputerIds).executeUpdate();
+            int logs = entityManager.createNativeQuery("DELETE FROM logs WHERE computer_id IN :ids")
+                    .setParameter("ids", staleComputerIds).executeUpdate();
+            int software = entityManager.createNativeQuery("DELETE FROM software_inventory WHERE computer_id IN :ids")
+                    .setParameter("ids", staleComputerIds).executeUpdate();
+            int diagEvents = entityManager.createNativeQuery("DELETE FROM diagnostic_events WHERE computer_id IN :ids")
+                    .setParameter("ids", staleComputerIds).executeUpdate();
+            int diagIncidents = entityManager.createNativeQuery("DELETE FROM diagnostic_incidents WHERE computer_id IN :ids")
+                    .setParameter("ids", staleComputerIds).executeUpdate();
+            int powerCmds = entityManager.createNativeQuery("DELETE FROM remote_power_commands WHERE computer_id IN :ids")
+                    .setParameter("ids", staleComputerIds).executeUpdate();
+            int powerAudits = entityManager.createNativeQuery("DELETE FROM remote_power_audits WHERE computer_id IN :ids")
+                    .setParameter("ids", staleComputerIds).executeUpdate();
+
+            // Finally delete computer records
+            int computers = entityManager.createNativeQuery("DELETE FROM computers WHERE id IN :ids")
+                    .setParameter("ids", staleComputerIds).executeUpdate();
+
+            stats.put("deletedComputers", computers);
+            stats.put("deletedMetrics", metrics);
+            stats.put("deletedHealthScores", health);
+            stats.put("deletedAlerts", alerts);
+            stats.put("deletedPredictions", predictions);
+            stats.put("deletedLogs", logs);
+            stats.put("deletedSoftware", software);
+            stats.put("deletedDiagEvents", diagEvents);
+            stats.put("deletedDiagIncidents", diagIncidents);
+            stats.put("deletedPowerCmds", powerCmds);
+            stats.put("deletedPowerAudits", powerAudits);
+
+            // Execute OPTIMIZE TABLE to shrink physical disk storage
+            List<String> optimized = optimizeTables();
+            stats.put("optimizedTables", optimized);
+            stats.put("status", "SUCCESS");
+
+            log.info("[STALE COMPUTER PURGE SUCCESS] Deleted {} stale computers, {} metrics, {} logs and optimized volume.", computers, metrics, logs);
+        } catch (Exception e) {
+            log.error("[STALE COMPUTER PURGE ERROR] Failed to purge stale computers: {}", e.getMessage(), e);
+            stats.put("status", "ERROR");
+            stats.put("error", e.getMessage());
+        }
+        return stats;
+    }
 }
+
 
