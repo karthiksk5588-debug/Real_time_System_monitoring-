@@ -10,6 +10,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -20,6 +21,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Component
@@ -29,6 +31,7 @@ public class DataRetentionScheduler {
     private final SystemMetricRepository metricRepository;
     private final DiagnosticEventRepository diagnosticEventRepository;
     private final SystemLogRepository systemLogRepository;
+    private final JdbcTemplate jdbcTemplate;
 
     @PersistenceContext
     private final EntityManager entityManager;
@@ -93,7 +96,7 @@ public class DataRetentionScheduler {
         for (String table : tables) {
             try {
                 // Execute MySQL OPTIMIZE TABLE to shrink physical disk .ibd files
-                entityManager.createNativeQuery("OPTIMIZE TABLE " + table).getResultList();
+                jdbcTemplate.execute("OPTIMIZE TABLE " + table);
                 optimized.add(table);
                 log.info("[VOLUME OPTIMIZE] Successfully executed OPTIMIZE TABLE {} to reclaim disk volume space.", table);
             } catch (Exception e) {
@@ -109,7 +112,7 @@ public class DataRetentionScheduler {
         Map<String, Object> result = new HashMap<>();
         try {
             log.warn("[EMERGENCY VOLUME RESET] Executing TRUNCATE TABLE system_metrics to instantly reclaim physical disk space...");
-            entityManager.createNativeQuery("TRUNCATE TABLE system_metrics").executeUpdate();
+            jdbcTemplate.execute("TRUNCATE TABLE system_metrics");
             result.put("status", "SUCCESS");
             result.put("message", "Successfully truncated system_metrics table and reclaimed MySQL physical disk volume.");
             log.info("[EMERGENCY VOLUME RESET] system_metrics table truncated successfully.");
@@ -121,7 +124,6 @@ public class DataRetentionScheduler {
         return result;
     }
 
-    @Transactional
     public Map<String, Object> purgeStaleComputers(List<String> staleComputerIds) {
         Map<String, Object> stats = new HashMap<>();
         if (staleComputerIds == null || staleComputerIds.isEmpty()) {
@@ -133,19 +135,19 @@ public class DataRetentionScheduler {
         try {
             log.warn("[STALE COMPUTER PURGE] Executing selective deletion of stale computers: {}", staleComputerIds);
 
-            int metrics = executeNativeDelete("system_metrics", "computer_id", staleComputerIds);
-            int health = executeNativeDelete("health_scores", "computer_id", staleComputerIds);
-            int alerts = executeNativeDelete("alerts", "computer_id", staleComputerIds);
-            int predictions = executeNativeDelete("predictions", "computer_id", staleComputerIds);
-            int logs = executeNativeDelete("logs", "computer_id", staleComputerIds);
-            int software = executeNativeDelete("software_inventory", "computer_id", staleComputerIds);
-            int diagEvents = executeNativeDelete("diagnostic_events", "computer_id", staleComputerIds);
-            int diagIncidents = executeNativeDelete("diagnostic_incidents", "computer_id", staleComputerIds);
-            int powerCmds = executeNativeDelete("remote_power_commands", "computer_id", staleComputerIds);
-            int powerAudits = executeNativeDelete("remote_power_audits", "computer_id", staleComputerIds);
+            int metrics = executeJdbcDelete("system_metrics", "computer_id", staleComputerIds);
+            int health = executeJdbcDelete("health_scores", "computer_id", staleComputerIds);
+            int alerts = executeJdbcDelete("alerts", "computer_id", staleComputerIds);
+            int predictions = executeJdbcDelete("predictions", "computer_id", staleComputerIds);
+            int logs = executeJdbcDelete("logs", "computer_id", staleComputerIds);
+            int software = executeJdbcDelete("software_inventory", "computer_id", staleComputerIds);
+            int diagEvents = executeJdbcDelete("diagnostic_events", "computer_id", staleComputerIds);
+            int diagIncidents = executeJdbcDelete("diagnostic_incidents", "computer_id", staleComputerIds);
+            int powerCmds = executeJdbcDelete("remote_power_commands", "computer_id", staleComputerIds);
+            int powerAudits = executeJdbcDelete("remote_power_audits", "computer_id", staleComputerIds);
 
             // Delete computer records
-            int computers = executeNativeDelete("computers", "id", staleComputerIds);
+            int computers = executeJdbcDelete("computers", "id", staleComputerIds);
 
             stats.put("deletedComputers", computers);
             stats.put("deletedMetrics", metrics);
@@ -173,17 +175,20 @@ public class DataRetentionScheduler {
         return stats;
     }
 
-    private int executeNativeDelete(String table, String column, List<String> ids) {
+    private int executeJdbcDelete(String table, String column, List<String> ids) {
         try {
-            return entityManager.createNativeQuery("DELETE FROM " + table + " WHERE " + column + " IN (:ids)")
-                    .setParameter("ids", ids)
-                    .executeUpdate();
+            String idList = ids.stream().map(id -> "'" + id.replace("'", "") + "'").collect(Collectors.joining(","));
+            String sql = "DELETE FROM " + table + " WHERE " + column + " IN (" + idList + ")";
+            int count = jdbcTemplate.update(sql);
+            log.info("[STALE COMPUTER PURGE] Deleted {} rows from {}", count, table);
+            return count;
         } catch (Exception e) {
-            log.warn("[STALE COMPUTER PURGE SKIP] Failed to delete from {}: {}", table, e.getMessage());
+            log.warn("[STALE COMPUTER PURGE SKIP] Could not delete from table {}: {}", table, e.getMessage());
             return 0;
         }
     }
 }
+
 
 
 
