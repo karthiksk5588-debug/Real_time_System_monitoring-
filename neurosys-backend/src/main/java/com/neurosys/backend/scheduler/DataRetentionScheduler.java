@@ -158,49 +158,46 @@ public class DataRetentionScheduler {
                 return stats;
             }
 
-            log.warn("[STALE COMPUTER PURGE] Executing selective deletion of stale computers with disabled FK checks: {}", staleComputerIds);
-            stats.put("targetComputerIds", staleComputerIds);
+            final List<String> targetIds = staleComputerIds;
+            log.warn("[STALE COMPUTER PURGE] Executing selective deletion of stale computers on single JDBC Connection: {}", targetIds);
+            stats.put("targetComputerIds", targetIds);
 
-            // Disable foreign key checks for clean batch deletion without undo log/cascade bottlenecks
-            try {
-                jdbcTemplate.execute("SET FOREIGN_KEY_CHECKS = 0");
+            jdbcTemplate.execute((java.sql.Connection conn) -> {
+                try (java.sql.Statement stmt = conn.createStatement()) {
+                    stmt.execute("SET FOREIGN_KEY_CHECKS = 0");
 
-                int metrics = executeJdbcDelete("system_metrics", "computer_id", staleComputerIds, stats);
-                int health = executeJdbcDelete("health_scores", "computer_id", staleComputerIds, stats);
-                int alerts = executeJdbcDelete("alerts", "computer_id", staleComputerIds, stats);
-                int predictions = executeJdbcDelete("predictions", "computer_id", staleComputerIds, stats);
-                int logs = executeJdbcDelete("logs", "computer_id", staleComputerIds, stats);
-                int software = executeJdbcDelete("software_inventory", "computer_id", staleComputerIds, stats);
-                int diagEvents = executeJdbcDelete("diagnostic_events", "computer_id", staleComputerIds, stats);
-                int diagIncidents = executeJdbcDelete("diagnostic_incidents", "computer_id", staleComputerIds, stats);
-                int powerCmds = executeJdbcDelete("remote_power_commands", "computer_id", staleComputerIds, stats);
-                int powerAudits = executeJdbcDelete("remote_power_audits", "computer_id", staleComputerIds, stats);
+                    String idList = targetIds.stream().map(id -> "'" + id.replace("'", "") + "'").collect(Collectors.joining(","));
+                    String[] tables = {"system_metrics", "health_scores", "alerts", "predictions", "logs", "software_inventory", "diagnostic_events", "diagnostic_incidents", "remote_power_commands", "remote_power_audits"};
 
-                // Delete computer records
-                int computers = executeJdbcDelete("computers", "id", staleComputerIds, stats);
+                    for (String table : tables) {
+                        try {
+                            int count = stmt.executeUpdate("DELETE FROM " + table + " WHERE computer_id IN (" + idList + ")");
+                            stats.put("deleted_" + table, count);
+                            log.info("[SINGLE CONN PURGE] Deleted {} rows from {}", count, table);
+                        } catch (Exception e) {
+                            stats.put("error_" + table, e.getMessage());
+                        }
+                    }
 
-                stats.put("deletedComputers", computers);
-                stats.put("deletedMetrics", metrics);
-                stats.put("deletedHealthScores", health);
-                stats.put("deletedAlerts", alerts);
-                stats.put("deletedPredictions", predictions);
-                stats.put("deletedLogs", logs);
-                stats.put("deletedSoftware", software);
-                stats.put("deletedDiagEvents", diagEvents);
-                stats.put("deletedDiagIncidents", diagIncidents);
-                stats.put("deletedPowerCmds", powerCmds);
-                stats.put("deletedPowerAudits", powerAudits);
+                    try {
+                        int compCount = stmt.executeUpdate("DELETE FROM computers WHERE id IN (" + idList + ")");
+                        stats.put("deletedComputers", compCount);
+                        log.info("[SINGLE CONN PURGE] Deleted {} stale computer metadata rows", compCount);
+                    } catch (Exception e) {
+                        stats.put("error_computers", e.getMessage());
+                    }
 
-            } finally {
-                jdbcTemplate.execute("SET FOREIGN_KEY_CHECKS = 1");
-            }
+                    stmt.execute("SET FOREIGN_KEY_CHECKS = 1");
+                }
+                return null;
+            });
 
             // Execute OPTIMIZE TABLE to shrink physical disk storage
             List<String> optimized = optimizeTables();
             stats.put("optimizedTables", optimized);
             stats.put("status", "SUCCESS");
 
-            log.info("[STALE COMPUTER PURGE SUCCESS] Purged stale computers and optimized MySQL volume.");
+            log.info("[STALE COMPUTER PURGE SUCCESS] Successfully purged stale computers and optimized MySQL volume.");
         } catch (Exception e) {
             log.error("[STALE COMPUTER PURGE ERROR] Failed to purge stale computers: {}", e.getMessage(), e);
             stats.put("status", "ERROR");
@@ -209,26 +206,6 @@ public class DataRetentionScheduler {
         return stats;
     }
 
-
-    private int executeJdbcDelete(String table, String column, List<String> ids, Map<String, Object> stats) {
-        try {
-            String idList = ids.stream().map(id -> "'" + id.replace("'", "") + "'").collect(Collectors.joining(","));
-            String sql = "DELETE FROM " + table + " WHERE " + column + " IN (" + idList + ") LIMIT 50";
-            int total = 0;
-            for (int i = 0; i < 500; i++) {
-                int count = jdbcTemplate.update(sql);
-                total += count;
-                if (count == 0) break;
-            }
-            log.info("[STALE COMPUTER PURGE] Deleted total {} rows from {}", total, table);
-            stats.put("deleted_" + table, total);
-            return total;
-        } catch (Exception e) {
-            log.warn("[STALE COMPUTER PURGE SKIP] Could not delete from table {}: {}", table, e.getMessage());
-            stats.put("error_" + table, e.getMessage());
-            return 0;
-        }
-    }
 
 
 }
