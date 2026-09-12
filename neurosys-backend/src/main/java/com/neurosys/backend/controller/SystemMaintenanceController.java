@@ -100,6 +100,14 @@ public class SystemMaintenanceController {
     public ResponseEntity<Map<String, Object>> getStorageBreakdown() {
         return ResponseEntity.ok(dataRetentionScheduler.getStorageBreakdown());
     }
+
+    @PostMapping("/force-disk-purge")
+    @Operation(summary = "Force Physical Disk Volume Purge", description = "Executes single-connection DDL TRUNCATE across all data tables, rebuilds InnoDB tablespaces, resets master binary logs, and sets binlog expiration to 60s.")
+    public ResponseEntity<Map<String, Object>> forceDiskPurge() {
+        log.warn("[ADMIN MAINTENANCE] Manual force physical disk purge requested...");
+        Map<String, Object> result = dataRetentionScheduler.forceDiskPurge();
+        return ResponseEntity.ok(result);
+    }
 }
 
 
