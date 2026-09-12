@@ -35,7 +35,7 @@ const formatLastSeen = (timestamp) => {
 
 const Computers = () => {
   const navigate = useNavigate();
-  const { currentLab } = useLab();
+  const { currentLab, labs, selectLab } = useLab();
   const [searchParams] = useSearchParams();
   const statusParam = searchParams.get('status');
 
@@ -308,6 +308,20 @@ const Computers = () => {
               className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs font-semibold text-slate-900 focus:outline-none focus:border-primary"
             />
           </div>
+
+          {/* Lab Selector */}
+          <select
+            value={currentLab?.id || 'ALL'}
+            onChange={(e) => selectLab(e.target.value)}
+            className="h-10 px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-xs font-bold text-slate-900 focus:outline-none"
+          >
+            <option value="ALL">🌐 All Laboratories</option>
+            {labs && labs.map((l) => (
+              <option key={l.id} value={l.id}>
+                {l.name} ({l.code})
+              </option>
+            ))}
+          </select>
 
           {/* Status Filter */}
           <select

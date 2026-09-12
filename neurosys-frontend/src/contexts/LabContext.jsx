@@ -11,7 +11,7 @@ export const LabProvider = ({ children }) => {
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        if (parsed && parsed.id && parsed.id !== 'ALL') {
+        if (parsed && parsed.id) {
           return parsed;
         }
       } catch (e) {
@@ -34,13 +34,15 @@ export const LabProvider = ({ children }) => {
         if (saved) {
           try {
             const parsed = JSON.parse(saved);
-            if (parsed && parsed.id !== 'ALL') {
+            if (parsed.id === 'ALL') {
+              active = parsed;
+            } else {
               active = list.find(l => l.id === parsed.id) || parsed;
             }
           } catch (e) {}
         }
         if (!active && list.length > 0) {
-          active = list[0];
+          active = { id: 'ALL', name: 'All Laboratories', code: 'ALL' };
         }
         if (active) {
           setCurrentLabState(active);
@@ -61,12 +63,18 @@ export const LabProvider = ({ children }) => {
   const selectLab = (labOrId) => {
     if (!labOrId) return;
     if (typeof labOrId === 'string') {
+      if (labOrId === 'ALL') {
+        const allLab = { id: 'ALL', name: 'All Laboratories', code: 'ALL' };
+        setCurrentLabState(allLab);
+        localStorage.setItem('currentLab', JSON.stringify(allLab));
+        return;
+      }
       const found = labs.find(l => l.id === labOrId);
       if (found) {
         setCurrentLabState(found);
         localStorage.setItem('currentLab', JSON.stringify(found));
       }
-    } else if (typeof labOrId === 'object' && labOrId.id && labOrId.id !== 'ALL') {
+    } else if (typeof labOrId === 'object' && labOrId.id) {
       setCurrentLabState(labOrId);
       localStorage.setItem('currentLab', JSON.stringify(labOrId));
     }
