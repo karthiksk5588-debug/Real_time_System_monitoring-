@@ -115,12 +115,33 @@ public class DataRetentionScheduler {
             result.put("message", "Successfully truncated system_metrics table and reclaimed MySQL physical disk volume.");
             log.info("[EMERGENCY VOLUME RESET] system_metrics table truncated successfully.");
         } catch (Exception e) {
-            log.error("[EMERGENCY VOLUME RESET ERROR] Failed to truncate system_metrics table: {}", e.getMessage(), e);
+            log.warn("[EMERGENCY VOLUME RESET FALLBACK] TRUNCATE TABLE failed (disk full), falling back to chunked row purging: {}", e.getMessage());
+            return chunkedPurgeMetrics();
+        }
+        return result;
+    }
+
+    public Map<String, Object> chunkedPurgeMetrics() {
+        Map<String, Object> result = new HashMap<>();
+        int totalDeleted = 0;
+        try {
+            log.warn("[CHUNKED PURGE] Executing small 500-row batch deletions to release MySQL disk space...");
+            for (int i = 0; i < 200; i++) {
+                int count = jdbcTemplate.update("DELETE FROM system_metrics LIMIT 500");
+                totalDeleted += count;
+                if (count == 0) break;
+            }
+            result.put("status", "SUCCESS");
+            result.put("totalDeletedMetrics", totalDeleted);
+            log.info("[CHUNKED PURGE SUCCESS] Deleted {} metric rows in small 500-row chunks.", totalDeleted);
+        } catch (Exception e) {
+            log.error("[CHUNKED PURGE ERROR] Failed chunked deletion: {}", e.getMessage(), e);
             result.put("status", "ERROR");
             result.put("error", e.getMessage());
         }
         return result;
     }
+
 
 
     public Map<String, Object> purgeStaleComputers(List<String> staleComputerIds) {
