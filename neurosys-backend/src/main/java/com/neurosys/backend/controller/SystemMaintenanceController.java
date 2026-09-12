@@ -61,6 +61,15 @@ public class SystemMaintenanceController {
         Map<String, Object> result = dataRetentionScheduler.purgeStaleComputers(staleComputerIds);
         return ResponseEntity.ok(result);
     }
+
+    @PostMapping("/chunked-purge")
+    @Operation(summary = "Emergency Chunked Metrics Purge", description = "Deletes high-frequency metric records in tiny 500-row chunks to release MySQL disk space when disk is 100% full.")
+    public ResponseEntity<Map<String, Object>> chunkedPurge() {
+        log.warn("[ADMIN MAINTENANCE] Manual chunked metric purge requested...");
+        Map<String, Object> result = dataRetentionScheduler.chunkedPurgeMetrics();
+        return ResponseEntity.ok(result);
+    }
 }
+
 
 
