@@ -89,7 +89,6 @@ public class DataRetentionScheduler {
         return stats;
     }
 
-    @Transactional
     public List<String> optimizeTables() {
         List<String> optimized = new ArrayList<>();
         String[] tables = {"system_metrics", "diagnostic_events", "system_logs", "predictions", "alerts"};
@@ -107,7 +106,6 @@ public class DataRetentionScheduler {
         return optimized;
     }
 
-    @Transactional
     public Map<String, Object> truncateMetricsTable() {
         Map<String, Object> result = new HashMap<>();
         try {
@@ -123,6 +121,7 @@ public class DataRetentionScheduler {
         }
         return result;
     }
+
 
     public Map<String, Object> purgeStaleComputers(List<String> staleComputerIds) {
         Map<String, Object> stats = new HashMap<>();
