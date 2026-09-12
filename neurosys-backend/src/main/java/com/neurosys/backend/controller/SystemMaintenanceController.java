@@ -69,7 +69,16 @@ public class SystemMaintenanceController {
         Map<String, Object> result = dataRetentionScheduler.chunkedPurgeMetrics();
         return ResponseEntity.ok(result);
     }
+
+    @PostMapping("/purge-all-logs")
+    @Operation(summary = "Purge All Historical Logs and Telemetry", description = "Truncates historical metrics, health scores, AI predictions, and event logs while keeping users, active computer registration, labs, and system config 100% intact.")
+    public ResponseEntity<Map<String, Object>> purgeAllLogs() {
+        log.warn("[ADMIN MAINTENANCE] Manual full telemetry and log purge requested...");
+        Map<String, Object> result = dataRetentionScheduler.purgeAllTelemetryAndLogs();
+        return ResponseEntity.ok(result);
+    }
 }
+
 
 
 

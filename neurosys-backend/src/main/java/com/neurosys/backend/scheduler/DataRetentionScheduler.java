@@ -208,7 +208,48 @@ public class DataRetentionScheduler {
 
 
 
+    public Map<String, Object> purgeAllTelemetryAndLogs() {
+        Map<String, Object> result = new HashMap<>();
+        try {
+            log.warn("[FULL VOLUME RECOVERY] Truncating all non-essential time-series tables (health_scores, predictions, system_metrics, logs)...");
+            String[] tables = {"system_metrics", "health_scores", "predictions", "logs", "diagnostic_events", "diagnostic_incidents", "alerts", "remote_power_commands", "remote_power_audits"};
+
+            jdbcTemplate.execute((java.sql.Connection conn) -> {
+                try (java.sql.Statement stmt = conn.createStatement()) {
+                    stmt.execute("SET FOREIGN_KEY_CHECKS = 0");
+                    for (String table : tables) {
+                        try {
+                            stmt.execute("TRUNCATE TABLE " + table);
+                            result.put("truncated_" + table, true);
+                            log.info("[VOLUME RECOVERY] Truncated {}", table);
+                        } catch (Exception e) {
+                            try {
+                                int count = stmt.executeUpdate("DELETE FROM " + table);
+                                result.put("deleted_" + table, count);
+                                log.info("[VOLUME RECOVERY FALLBACK] Deleted {} rows from {}", count, table);
+                            } catch (Exception ex) {
+                                result.put("error_" + table, ex.getMessage());
+                            }
+                        }
+                    }
+                    stmt.execute("SET FOREIGN_KEY_CHECKS = 1");
+                }
+                return null;
+            });
+
+            List<String> optimized = optimizeTables();
+            result.put("optimizedTables", optimized);
+            result.put("status", "SUCCESS");
+            result.put("message", "Purged all historical logs and time-series telemetry. Physical disk space reclaimed.");
+        } catch (Exception e) {
+            log.error("[FULL VOLUME RECOVERY ERROR] Failed: {}", e.getMessage(), e);
+            result.put("status", "ERROR");
+            result.put("error", e.getMessage());
+        }
+        return result;
+    }
 }
+
 
 
 
