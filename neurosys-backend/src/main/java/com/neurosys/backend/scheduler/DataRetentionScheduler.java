@@ -113,13 +113,20 @@ public class DataRetentionScheduler {
     public Map<String, Object> truncateMetricsTable() {
         Map<String, Object> result = new HashMap<>();
         try {
-            log.warn("[EMERGENCY VOLUME RESET] Executing TRUNCATE TABLE system_metrics to instantly reclaim physical disk space...");
-            jdbcTemplate.execute("TRUNCATE TABLE system_metrics");
+            log.warn("[EMERGENCY VOLUME RESET] Executing TRUNCATE TABLE system_metrics on single connection with FK disabled...");
+            jdbcTemplate.execute((java.sql.Connection conn) -> {
+                try (java.sql.Statement stmt = conn.createStatement()) {
+                    stmt.execute("SET FOREIGN_KEY_CHECKS = 0");
+                    stmt.execute("TRUNCATE TABLE system_metrics");
+                    stmt.execute("SET FOREIGN_KEY_CHECKS = 1");
+                }
+                return null;
+            });
             result.put("status", "SUCCESS");
             result.put("message", "Successfully truncated system_metrics table and reclaimed MySQL physical disk volume.");
             log.info("[EMERGENCY VOLUME RESET] system_metrics table truncated successfully.");
         } catch (Exception e) {
-            log.warn("[EMERGENCY VOLUME RESET FALLBACK] TRUNCATE TABLE failed (disk full), falling back to chunked row purging: {}", e.getMessage());
+            log.warn("[EMERGENCY VOLUME RESET FALLBACK] TRUNCATE TABLE failed, falling back to chunked row purging: {}", e.getMessage());
             return chunkedPurgeMetrics();
         }
         return result;
