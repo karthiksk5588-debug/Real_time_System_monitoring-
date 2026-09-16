@@ -75,4 +75,13 @@ public class Computer extends BaseEntity {
     @Column(name = "last_seen_at")
     @Builder.Default
     private Instant lastSeenAt = Instant.now();
+
+    @Column(name = "last_cpu_usage")
+    private Double lastCpuUsage;
+
+    @Column(name = "last_ram_usage")
+    private Double lastRamUsage;
+
+    @Column(name = "last_disk_usage")
+    private Double lastDiskUsage;
 }

@@ -21,6 +21,8 @@ import org.springframework.scheduling.annotation.Scheduled;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayDeque;
+import java.util.Deque;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -47,6 +49,7 @@ public class SystemMetricsServiceImpl implements SystemMetricsService {
     private int retentionDays;
 
     private final Map<String, Instant> lastHistoricalSaveMap = new ConcurrentHashMap<>();
+    private final Map<String, Deque<SystemMetricDto>> liveBufferMap = new ConcurrentHashMap<>();
 
     private long getHistoryIntervalSeconds() {
         if (historyIntervalConfig == null) return 30L;
@@ -164,6 +167,9 @@ public class SystemMetricsServiceImpl implements SystemMetricsService {
         }
         computer.setStatus(newStatus);
         computer.setLastSeenAt(now);
+        computer.setLastCpuUsage(cpu);
+        computer.setLastRamUsage(ram);
+        computer.setLastDiskUsage(disk);
         computer.setUpdatedAt(now);
         computerRepository.save(computer);
 
@@ -182,6 +188,15 @@ public class SystemMetricsServiceImpl implements SystemMetricsService {
 
         SystemMetricDto metricDto = mapToDto(metric);
 
+        // Push into 1-second live in-memory telemetry buffer (keep last 60 seconds per computer)
+        Deque<SystemMetricDto> buffer = liveBufferMap.computeIfAbsent(computer.getId(), k -> new ArrayDeque<>());
+        synchronized (buffer) {
+            buffer.addFirst(metricDto);
+            while (buffer.size() > 60) {
+                buffer.removeLast();
+            }
+        }
+
         // Broadcast to WebSocket clients
         webSocketMetricsPublisher.broadcastTelemetryUpdate(metricDto, healthScore, alerts);
 
@@ -191,6 +206,12 @@ public class SystemMetricsServiceImpl implements SystemMetricsService {
     @Override
     @Transactional(readOnly = true)
     public List<SystemMetricDto> getMetricHistory(String computerId, int limit) {
+        Deque<SystemMetricDto> buffer = liveBufferMap.get(computerId);
+        if (buffer != null && !buffer.isEmpty()) {
+            synchronized (buffer) {
+                return buffer.stream().limit(limit).toList();
+            }
+        }
         return systemMetricRepository.findByComputerIdOrderByRecordedAtDesc(computerId, PageRequest.of(0, limit))
                 .stream().map(this::mapToDto).toList();
     }
