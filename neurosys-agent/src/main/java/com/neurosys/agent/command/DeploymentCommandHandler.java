@@ -144,7 +144,7 @@ public class DeploymentCommandHandler {
                 pb = new ProcessBuilder("msiexec.exe", "/i", tempInstaller.getAbsolutePath(), args);
             } else {
                 String args = (silentArguments != null && !silentArguments.isBlank()) ? silentArguments : "/S";
-                pb = new ProcessBuilder(tempInstaller.getAbsolutePath(), args);
+                pb = new ProcessBuilder("cmd.exe", "/c", "start", "/wait", "", tempInstaller.getAbsolutePath(), args);
             }
 
             pb.redirectErrorStream(true);
