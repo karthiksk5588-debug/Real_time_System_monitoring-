@@ -21,7 +21,6 @@ import java.util.List;
 @RestController
 @RequestMapping({"/api/v1/admin/deployments", "/api/admin/deployments"})
 @RequiredArgsConstructor
-@PreAuthorize("hasRole('ADMIN')")
 public class SoftwareDeploymentAdminController {
 
     private final SoftwareDeploymentService deploymentService;
@@ -33,6 +32,7 @@ public class SoftwareDeploymentAdminController {
     }
 
     @PostMapping("/packages")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<SoftwarePackageDto>> createPackage(@Valid @RequestBody SoftwarePackageDto dto) {
         SoftwarePackageDto created = deploymentService.createPackage(dto);
         return ResponseEntity.status(HttpStatus.CREATED)
@@ -40,6 +40,7 @@ public class SoftwareDeploymentAdminController {
     }
 
     @PostMapping
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<DeploymentResponseDto>> createDeployment(
             @Valid @RequestBody CreateDeploymentRequest request,
             Authentication authentication) {
@@ -68,6 +69,7 @@ public class SoftwareDeploymentAdminController {
     }
 
     @PostMapping("/{id}/cancel")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<DeploymentResponseDto>> cancelDeployment(
             @PathVariable String id,
             Authentication authentication) {
