@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { metricsService, fetchRealApi } from '../services/metricsService';
 import { useLab } from '../contexts/LabContext';
+import SoftwareDeploymentTab from '../components/SoftwareDeploymentTab';
 import { 
   PackageCheck, 
   Search, 
@@ -15,7 +16,8 @@ import {
   Monitor,
   ChevronRight,
   ArrowLeft,
-  Sparkles
+  Sparkles,
+  Rocket
 } from 'lucide-react';
 
 const Software = () => {
@@ -31,11 +33,7 @@ const Software = () => {
   const [errorMsg, setErrorMsg] = useState(null);
 
   const [selectedSoftwareName, setSelectedSoftwareName] = useState(null);
-  const [activeTab, setActiveTab] = useState('ALL');
-
-  const [showDeployModal, setShowDeployModal] = useState(false);
-  const [deployTargetSoftware, setDeployTargetSoftware] = useState('');
-  const [deployTargetComp, setDeployTargetComp] = useState('');
+  const [activeMainTab, setActiveMainTab] = useState('INVENTORY'); // INVENTORY | DEPLOYMENT
 
   useEffect(() => {
     loadData();
@@ -242,10 +240,10 @@ const Software = () => {
         <div>
           <div className="flex items-center gap-3">
             <PackageCheck className="w-8 h-8 text-primary" />
-            <h1 className="font-display text-display text-slate-900 tracking-tight font-extrabold">Software Inventory</h1>
+            <h1 className="font-display text-display text-slate-900 tracking-tight font-extrabold">Software Management</h1>
           </div>
           <p className="font-body-md text-body-md text-slate-700 mt-1 font-medium">
-            Search for an application to view real installation status across lab computers.
+            Search application inventory, audit workstation software, or push centralized software deployments to lab computers.
           </p>
         </div>
 
@@ -270,7 +268,39 @@ const Software = () => {
         </div>
       </div>
 
-      {/* Part 1: Top Summary Cards */}
+      {/* Main Tab Navigation Bar */}
+      <div className="flex border-b border-slate-200 space-x-4">
+        <button
+          onClick={() => setActiveMainTab('INVENTORY')}
+          className={`pb-3 px-4 text-xs font-extrabold flex items-center gap-2 border-b-2 transition-colors cursor-pointer ${
+            activeMainTab === 'INVENTORY'
+              ? 'border-primary text-primary'
+              : 'border-transparent text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          <PackageCheck className="w-4 h-4" />
+          <span>Software Inventory &amp; Audit</span>
+        </button>
+
+        <button
+          onClick={() => setActiveMainTab('DEPLOYMENT')}
+          className={`pb-3 px-4 text-xs font-extrabold flex items-center gap-2 border-b-2 transition-colors cursor-pointer ${
+            activeMainTab === 'DEPLOYMENT'
+              ? 'border-primary text-primary'
+              : 'border-transparent text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          <Rocket className="w-4 h-4" />
+          <span>Centralized Software Deployment</span>
+          <span className="px-1.5 py-0.5 text-[10px] bg-primary/20 text-primary rounded-full font-bold">ADMIN</span>
+        </button>
+      </div>
+
+      {activeMainTab === 'DEPLOYMENT' ? (
+        <SoftwareDeploymentTab />
+      ) : (
+        <>
+          {/* Part 1: Top Summary Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 animate-fade-in-up">
         {/* Total Computers */}
         <div className="card-elevated p-4 flex flex-col justify-between border border-slate-200">
@@ -664,6 +694,8 @@ const Software = () => {
             </div>
           </div>
         </div>
+      )}
+        </>
       )}
     </div>
   );

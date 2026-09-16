@@ -8,6 +8,7 @@ import com.neurosys.backend.enums.Role;
 import com.neurosys.backend.repository.ComputerRepository;
 import com.neurosys.backend.repository.LabRepository;
 import com.neurosys.backend.repository.SoftwareInventoryRepository;
+import com.neurosys.backend.repository.SoftwarePackageRepository;
 import com.neurosys.backend.repository.UserRepository;
 
 import lombok.RequiredArgsConstructor;
@@ -27,6 +28,7 @@ public class DataInitializer implements CommandLineRunner {
     private final ComputerRepository computerRepository;
     private final SoftwareInventoryRepository softwareInventoryRepository;
     private final LabRepository labRepository;
+    private final SoftwarePackageRepository softwarePackageRepository;
     private final PasswordEncoder passwordEncoder;
 
     @Override
@@ -124,5 +126,55 @@ public class DataInitializer implements CommandLineRunner {
             c.setLabName(lab1.getName());
             computerRepository.save(c);
         });
+
+        // 6. Seed Approved Software Catalog
+        if (softwarePackageRepository.count() == 0) {
+            log.info("Seeding pre-approved software packages catalog...");
+            softwarePackageRepository.save(com.neurosys.backend.entity.SoftwarePackage.builder()
+                    .name("VLC Media Player")
+                    .version("3.0.21")
+                    .installerUrl("https://get.videolan.org/vlc/3.0.21/win32/vlc-3.0.21-win32.exe")
+                    .installerType(com.neurosys.backend.enums.InstallerType.EXE)
+                    .silentArguments("/S")
+                    .checksum("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
+                    .supportedOs("Windows 10/11")
+                    .active(true)
+                    .build());
+
+            softwarePackageRepository.save(com.neurosys.backend.entity.SoftwarePackage.builder()
+                    .name("Notepad++")
+                    .version("8.6.9")
+                    .installerUrl("https://github.com/notepad-plus-plus/notepad-plus-plus/releases/download/v8.6.9/npp.8.6.9.Installer.x64.exe")
+                    .installerType(com.neurosys.backend.enums.InstallerType.EXE)
+                    .silentArguments("/S")
+                    .checksum("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
+                    .supportedOs("Windows 10/11")
+                    .active(true)
+                    .build());
+
+            softwarePackageRepository.save(com.neurosys.backend.entity.SoftwarePackage.builder()
+                    .name("7-Zip")
+                    .version("24.07")
+                    .installerUrl("https://www.7-zip.org/a/7z2407-x64.msi")
+                    .installerType(com.neurosys.backend.enums.InstallerType.MSI)
+                    .silentArguments("/qn /norestart")
+                    .checksum("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
+                    .supportedOs("Windows 10/11")
+                    .active(true)
+                    .build());
+
+            softwarePackageRepository.save(com.neurosys.backend.entity.SoftwarePackage.builder()
+                    .name("Git for Windows")
+                    .version("2.46.0")
+                    .installerUrl("https://github.com/git-for-windows/git/releases/download/v2.46.0.windows.1/Git-2.46.0-64-bit.exe")
+                    .installerType(com.neurosys.backend.enums.InstallerType.EXE)
+                    .silentArguments("/VERYSILENT /NORESTART")
+                    .checksum("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
+                    .supportedOs("Windows 10/11")
+                    .active(true)
+                    .build());
+
+            log.info("Software packages catalog seeded successfully.");
+        }
     }
 }

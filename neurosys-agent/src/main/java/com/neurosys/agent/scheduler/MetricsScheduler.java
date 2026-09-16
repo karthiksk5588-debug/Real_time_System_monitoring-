@@ -1,6 +1,7 @@
 package com.neurosys.agent.scheduler;
 
 import com.neurosys.agent.collector.*;
+import com.neurosys.agent.command.DeploymentCommandHandler;
 import com.neurosys.agent.command.PowerCommandHandler;
 import com.neurosys.agent.config.AgentConfig;
 import com.neurosys.agent.sender.MetricsSender;
@@ -30,8 +31,10 @@ public class MetricsScheduler {
     private final WindowsLogCollector windowsLogCollector;
     private final MetricsSender metricsSender;
     private final PowerCommandHandler powerCommandHandler;
+    private final DeploymentCommandHandler deploymentCommandHandler;
     private final ScheduledExecutorService scheduler;
     private final ScheduledExecutorService powerCommandExecutor;
+    private final ScheduledExecutorService deploymentExecutor;
     private boolean isRegistered = false;
     private int cycleCounter = 0;
 
@@ -48,12 +51,14 @@ public class MetricsScheduler {
         this.windowsLogCollector = new WindowsLogCollector();
         this.metricsSender = new MetricsSender();
         this.powerCommandHandler = new PowerCommandHandler();
+        this.deploymentCommandHandler = new DeploymentCommandHandler();
         this.scheduler = Executors.newSingleThreadScheduledExecutor();
         this.powerCommandExecutor = Executors.newSingleThreadScheduledExecutor();
+        this.deploymentExecutor = Executors.newSingleThreadScheduledExecutor();
     }
 
     public void start() {
-        log.info("Starting NeuroSys Telemetry Agent (Heartbeat Interval: 1s, Power Command Polling: 500ms)...", AgentConfig.getIntervalSeconds());
+        log.info("Starting NeuroSys Telemetry Agent (Heartbeat Interval: 1s, Power Command Polling: 500ms, Deployment Polling: 3s)...", AgentConfig.getIntervalSeconds());
 
         // 1. Perform immediate registration & instant initial heartbeat on startup
         attemptRegistration();
@@ -84,6 +89,17 @@ public class MetricsScheduler {
                 // Catch silently during network polling
             }
         }, 0, 500, TimeUnit.MILLISECONDS);
+
+        // 5. Schedule dedicated 3s polling loop for centralized software deployments
+        deploymentExecutor.scheduleAtFixedRate(() -> {
+            try {
+                if (isRegistered) {
+                    deploymentCommandHandler.pollAndExecutePendingDeployments();
+                }
+            } catch (Exception e) {
+                // Catch silently during network polling
+            }
+        }, 0, 3, TimeUnit.SECONDS);
     }
 
     private void attemptRegistration() {

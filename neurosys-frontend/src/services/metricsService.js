@@ -123,4 +123,12 @@ export const metricsService = {
   getAIDiagnosis: async (computerId) => fetchRealApi(`/diagnostics/${computerId}`),
   getAnalyticsSummary: async () => fetchRealApi('/analytics/summary'),
   askAiAssistant: async (message, computerId) => api.post('/ai-assistant/chat', { message, computerId }),
+
+  // Centralized Software Deployment APIs
+  getDeploymentPackages: async () => fetchRealApi('/admin/deployments/packages'),
+  addDeploymentPackage: async (pkg) => fetchRealApi('/admin/deployments/packages', { method: 'POST', body: pkg }),
+  createSoftwareDeployment: async (req) => fetchRealApi('/admin/deployments', { method: 'POST', body: req }),
+  getAllDeployments: async () => fetchRealApi('/admin/deployments'),
+  getDeploymentsByLab: async (labId) => fetchRealApi(`/admin/deployments/lab/${labId}`),
+  cancelSoftwareDeployment: async (id) => fetchRealApi(`/admin/deployments/${id}/cancel`, { method: 'POST' }),
 };
