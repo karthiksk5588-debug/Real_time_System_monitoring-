@@ -45,6 +45,13 @@ neurosys:
       api-key: ${GEMINI_API_KEY:}
       model: ${GEMINI_MODEL:gemini-2.5-flash}
 
+telemetry:
+  collection:
+    interval: ${TELEMETRY_COLLECTION_INTERVAL:1s}
+  history:
+    interval: ${TELEMETRY_HISTORY_INTERVAL:30s}
+    retention-days: ${TELEMETRY_HISTORY_RETENTION_DAYS:7}
+
 springdoc:
   api-docs:
     path: /v3/api-docs

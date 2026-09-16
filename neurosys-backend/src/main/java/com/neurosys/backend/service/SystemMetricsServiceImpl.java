@@ -15,9 +15,16 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.scheduling.annotation.Scheduled;
+
+import java.time.Duration;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Slf4j
 @Service
@@ -32,6 +39,24 @@ public class SystemMetricsServiceImpl implements SystemMetricsService {
     private final WebSocketMetricsPublisher webSocketMetricsPublisher;
     private final HeartbeatTrackerService heartbeatTracker;
     private final com.fasterxml.jackson.databind.ObjectMapper objectMapper;
+
+    @Value("${telemetry.history.interval:30s}")
+    private String historyIntervalConfig;
+
+    @Value("${telemetry.history.retention-days:7}")
+    private int retentionDays;
+
+    private final Map<String, Instant> lastHistoricalSaveMap = new ConcurrentHashMap<>();
+
+    private long getHistoryIntervalSeconds() {
+        if (historyIntervalConfig == null) return 30L;
+        String clean = historyIntervalConfig.replaceAll("[^0-9]", "").trim();
+        try {
+            return clean.isEmpty() ? 30L : Long.parseLong(clean);
+        } catch (Exception e) {
+            return 30L;
+        }
+    }
 
     @Override
     @Transactional
@@ -93,13 +118,24 @@ public class SystemMetricsServiceImpl implements SystemMetricsService {
 
         metric.setCreatedAt(Instant.now());
         metric.setUpdatedAt(Instant.now());
-        metric = systemMetricRepository.save(metric);
+
+        // Sampled DB persistence: Save to MySQL only every historyIntervalSeconds (e.g. 30s) per computer
+        Instant now = Instant.now();
+        Instant lastSave = lastHistoricalSaveMap.get(computer.getId());
+        long intervalSec = getHistoryIntervalSeconds();
+
+        boolean shouldSaveToDb = (lastSave == null || Duration.between(lastSave, now).getSeconds() >= intervalSec);
+
+        if (shouldSaveToDb) {
+            metric = systemMetricRepository.save(metric);
+            lastHistoricalSaveMap.put(computer.getId(), now);
+            log.info("[INFO] Saved sampled telemetry metric to DB for computer ID={} ({})", computer.getId(), computer.getHostname());
+        }
 
         // Structured Heartbeat & Reconnect Logging
         ComputerStatus oldStatus = computer.getStatus();
         log.info("[INFO] Heartbeat received from {} (Agent: {})", computer.getHostname(), computer.getAgentId());
 
-        Instant now = Instant.now();
         heartbeatTracker.updateHeartbeatTime(computer.getId());
         computer.setLastSeenAt(now);
         if (request.getInternetConnected() != null) {
@@ -187,5 +223,16 @@ public class SystemMetricsServiceImpl implements SystemMetricsService {
                 .activeProcessCount(metric.getActiveProcessCount())
                 .recordedAt(metric.getRecordedAt())
                 .build();
+    }
+
+    @Scheduled(cron = "0 0 * * * *")
+    @Transactional
+    public void cleanupOldTelemetryData() {
+        Instant cutoff = Instant.now().minus(retentionDays, ChronoUnit.DAYS);
+        int deletedCount = systemMetricRepository.deleteMetricsOlderThan(cutoff);
+        if (deletedCount > 0) {
+            log.info("[INFO] Automated Telemetry Retention Cleanup: Deleted {} historical metrics older than {} (Retention: {} days)",
+                    deletedCount, cutoff, retentionDays);
+        }
     }
 }

@@ -11,6 +11,11 @@ const Analytics = () => {
   const [combinedChartData, setCombinedChartData] = useState([]);
   const [loading, setLoading] = useState(true);
 
+  // Time Range selection for AI Historical Telemetry Insights (1h, 6h, 24h, 7d)
+  const [timeRange, setTimeRange] = useState('24h');
+  const [aiInsights, setAiInsights] = useState(null);
+  const [insightsLoading, setInsightsLoading] = useState(false);
+
   useEffect(() => {
     fetchComputers();
   }, [currentLab?.id]);
@@ -20,6 +25,24 @@ const Analytics = () => {
       fetchComputerPredictionAndHistory(selectedComputerId);
     }
   }, [selectedComputerId]);
+
+  useEffect(() => {
+    fetchAIInsights(timeRange, selectedComputerId);
+  }, [timeRange, selectedComputerId, currentLab?.id]);
+
+  const fetchAIInsights = async (range, compId) => {
+    setInsightsLoading(true);
+    try {
+      const res = await metricsService.getAIInsights(range, compId, currentLab?.id);
+      const data = res?.data || res;
+      setAiInsights(data);
+    } catch (err) {
+      console.error('Error fetching AI Insights', err);
+      setAiInsights(null);
+    } finally {
+      setInsightsLoading(false);
+    }
+  };
 
   const fetchComputers = async () => {
     try {
@@ -257,6 +280,134 @@ const Analytics = () => {
           </div>
         </div>
       </div>
+
+      {/* AI Historical Telemetry Insights Section */}
+      <section className="card-elevated p-6 space-y-6 border border-slate-200">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 pb-4">
+          <div>
+            <h3 className="text-headline-md font-headline-md text-slate-900 font-bold flex items-center gap-2">
+              <span className="material-symbols-outlined text-primary font-bold">auto_awesome</span>
+              AI Historical Telemetry Insights
+            </h3>
+            <p className="text-body-md font-body-md text-slate-700 mt-0.5 font-medium">
+              Empirical database telemetry trends over selected time windows for {selectedComp ? selectedComp.hostname : 'all workstations'}.
+            </p>
+          </div>
+
+          {/* Time Range Selector Tabs */}
+          <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl border border-slate-200 shrink-0">
+            {[
+              { id: '1h', label: '1 Hour' },
+              { id: '6h', label: '6 Hours' },
+              { id: '24h', label: '24 Hours' },
+              { id: '7d', label: '7 Days' }
+            ].map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setTimeRange(tab.id)}
+                className={`px-3 py-1.5 rounded-lg text-body-sm font-bold transition-all ${
+                  timeRange === tab.id
+                    ? 'bg-white text-primary shadow-sm border border-slate-200'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {insightsLoading ? (
+          <div className="h-40 flex items-center justify-center text-slate-600 text-body-md font-medium">
+            <span className="material-symbols-outlined text-primary text-2xl animate-spin mr-2">sync</span>
+            Analyzing database historical telemetry for {timeRange.toUpperCase()} time range...
+          </div>
+        ) : aiInsights && (aiInsights.isDataSufficient || aiInsights.dataSufficient) ? (
+          <div className="space-y-6">
+            {/* Stat Summary Cards */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-1">
+                <span className="text-label-md text-slate-600 font-bold block">CPU Avg / Peak</span>
+                <span className="text-headline-md font-bold text-slate-900">
+                  {aiInsights.cpuAveragePercent}% <span className="text-label-md text-slate-600 font-normal">({aiInsights.cpuPeakPercent}% peak)</span>
+                </span>
+                <span className="text-label-sm text-primary font-bold block">Trend: {aiInsights.cpuTrend}</span>
+              </div>
+
+              <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-1">
+                <span className="text-label-md text-slate-600 font-bold block">RAM Avg / Peak</span>
+                <span className="text-headline-md font-bold text-slate-900">
+                  {aiInsights.memoryAveragePercent}% <span className="text-label-md text-slate-600 font-normal">({aiInsights.memoryPeakPercent}% peak)</span>
+                </span>
+                <span className="text-label-sm text-primary font-bold block">Trend: {aiInsights.memoryTrend}</span>
+              </div>
+
+              <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-1">
+                <span className="text-label-md text-slate-600 font-bold block">Storage Used / Growth</span>
+                <span className="text-headline-md font-bold text-slate-900">
+                  {aiInsights.diskAveragePercent}% <span className="text-label-md text-slate-600 font-normal">(+{aiInsights.diskGrowthRateGb} GB)</span>
+                </span>
+                <span className="text-label-sm text-slate-600 font-medium block">Over {timeRange.toUpperCase()}</span>
+              </div>
+
+              <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-1">
+                <span className="text-label-md text-slate-600 font-bold block">Net Throughput</span>
+                <span className="text-headline-md font-bold text-slate-900">
+                  {aiInsights.networkAvgThroughputKbps} Kbps
+                </span>
+                <span className="text-label-sm text-emerald-700 font-bold block">{aiInsights.totalDataPoints} DB Samples</span>
+              </div>
+            </div>
+
+            {/* Empirical Insights List */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="p-5 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
+                <h4 className="text-headline-sm font-bold text-slate-900 flex items-center gap-2">
+                  <span className="material-symbols-outlined text-primary">analytics</span>
+                  Telemetry Insights ({timeRange.toUpperCase()})
+                </h4>
+                <div className="space-y-2">
+                  {aiInsights.insights?.map((ins, idx) => (
+                    <div key={idx} className="flex items-start gap-2 text-body-md text-slate-800 font-medium">
+                      <span className="material-symbols-outlined text-primary text-lg mt-0.5 shrink-0">check_circle</span>
+                      <span>{ins}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="p-5 bg-primary-container/10 border border-primary/20 rounded-xl space-y-3">
+                <h4 className="text-headline-sm font-bold text-slate-900 flex items-center gap-2">
+                  <span className="material-symbols-outlined text-primary">lightbulb</span>
+                  Targeted Recommendations
+                </h4>
+                <div className="space-y-2">
+                  {aiInsights.recommendations?.map((rec, idx) => (
+                    <div key={idx} className="flex items-start gap-2 text-body-md text-slate-900 font-medium">
+                      <span className="material-symbols-outlined text-amber-600 text-lg mt-0.5 shrink-0">tips_and_updates</span>
+                      <span>{rec}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : (
+          /* Data Sufficiency Warning Banner */
+          <div className="p-6 bg-amber-50 border border-amber-200 rounded-xl flex flex-col items-center justify-center text-center space-y-2">
+            <span className="material-symbols-outlined text-amber-600 text-4xl">info</span>
+            <h4 className="text-headline-md font-bold text-amber-900">
+              Not enough historical telemetry data yet.
+            </h4>
+            <p className="text-body-md text-amber-800 font-medium max-w-lg">
+              {aiInsights?.insufficientDataReason || 'At least 2 historical telemetry records in the database are required to evaluate trends over the selected time range.'}
+            </p>
+            <p className="text-label-md text-amber-700 font-bold mt-2">
+              💡 Tip: Ensure the Windows Agent is running and sending periodic telemetry heartbeats.
+            </p>
+          </div>
+        )}
+      </section>
     </div>
   );
 };

@@ -122,6 +122,8 @@ export const metricsService = {
   evaluateCrashRisk: async (id) => api.post(`/predictions/crash/${id}/evaluate`, {}),
   getAIDiagnosis: async (computerId) => fetchRealApi(`/diagnostics/${computerId}`),
   getAnalyticsSummary: async () => fetchRealApi('/analytics/summary'),
+  getAIInsights: async (timeRange = '24h', computerId = '', labId = '') =>
+    fetchRealApi(`/analytics/ai-insights?timeRange=${timeRange}&computerId=${computerId || ''}&labId=${labId || ''}`),
   askAiAssistant: async (message, computerId) => api.post('/ai-assistant/chat', { message, computerId }),
 
   // Centralized Software Deployment APIs

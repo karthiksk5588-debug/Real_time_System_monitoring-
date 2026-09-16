@@ -36,16 +36,17 @@ public class DataRetentionScheduler {
     @PersistenceContext
     private final EntityManager entityManager;
 
-    @Value("${neurosys.retention.metrics-hours:2}")
-    private int metricsRetentionHours;
+    @Value("${telemetry.history.retention-days:7}")
+    private int retentionDays;
 
     @Value("${neurosys.retention.logs-days:7}")
     private int logsRetentionDays;
 
     // Run automatically on backend startup
     @EventListener(ApplicationReadyEvent.class)
+    @Transactional
     public void onStartupCleanup() {
-        log.info("[RETENTION] Initializing database volume retention check on startup (Retention: {}h metrics)...", metricsRetentionHours);
+        log.info("[RETENTION] Initializing database volume retention check on startup (Retention: {}d metrics)...", retentionDays);
         performRetentionCleanup();
     }
 
@@ -60,7 +61,7 @@ public class DataRetentionScheduler {
     public Map<String, Object> performRetentionCleanup() {
         Map<String, Object> stats = new HashMap<>();
         try {
-            Instant metricCutoff = Instant.now().minus(metricsRetentionHours, ChronoUnit.HOURS);
+            Instant metricCutoff = Instant.now().minus(retentionDays, ChronoUnit.DAYS);
             Instant logCutoff = Instant.now().minus(logsRetentionDays, ChronoUnit.DAYS);
 
             int deletedMetrics = metricRepository.deleteMetricsOlderThan(metricCutoff);
@@ -73,8 +74,8 @@ public class DataRetentionScheduler {
             stats.put("metricCutoff", metricCutoff.toString());
             stats.put("logCutoff", logCutoff.toString());
 
-            log.info("[RETENTION CLEANUP] Successfully purged {} metrics (>{}h), {} diagnostic events (>{}d), {} system logs (>{}d) from MySQL volume.",
-                    deletedMetrics, metricsRetentionHours, deletedEvents, logsRetentionDays, deletedLogs, logsRetentionDays);
+            log.info("[RETENTION CLEANUP] Successfully purged {} metrics (>{}d), {} diagnostic events (>{}d), {} system logs (>{}d) from MySQL volume.",
+                    deletedMetrics, retentionDays, deletedEvents, logsRetentionDays, deletedLogs, logsRetentionDays);
 
             // Attempt to optimize tables if rows were deleted to reclaim free space
             if (deletedMetrics > 0 || deletedEvents > 0 || deletedLogs > 0) {

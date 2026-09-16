@@ -16,6 +16,13 @@ import java.util.Optional;
 public interface SystemMetricRepository extends JpaRepository<SystemMetric, Long> {
     List<SystemMetric> findByComputerIdOrderByRecordedAtDesc(String computerId, Pageable pageable);
     
+    List<SystemMetric> findByComputerIdAndRecordedAtBetweenOrderByRecordedAtAsc(String computerId, Instant start, Instant end);
+
+    @Query("SELECT sm FROM SystemMetric sm JOIN sm.computer c WHERE c.lab.id = :labId AND sm.recordedAt BETWEEN :start AND :end ORDER BY sm.recordedAt ASC")
+    List<SystemMetric> findByComputerLabIdAndRecordedAtBetweenOrderByRecordedAtAsc(@Param("labId") String labId, @Param("start") Instant start, @Param("end") Instant end);
+
+    List<SystemMetric> findByRecordedAtBetweenOrderByRecordedAtAsc(Instant start, Instant end);
+
     @Query("SELECT sm FROM SystemMetric sm WHERE sm.computer.id = :computerId ORDER BY sm.recordedAt DESC LIMIT 1")
     Optional<SystemMetric> findLatestByComputerId(@Param("computerId") String computerId);
 
