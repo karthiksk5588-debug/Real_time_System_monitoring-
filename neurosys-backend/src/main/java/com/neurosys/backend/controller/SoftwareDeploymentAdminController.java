@@ -19,7 +19,7 @@ import java.util.List;
 
 @Slf4j
 @RestController
-@RequestMapping("/api/admin/deployments")
+@RequestMapping({"/api/v1/admin/deployments", "/api/admin/deployments"})
 @RequiredArgsConstructor
 @PreAuthorize("hasRole('ADMIN')")
 public class SoftwareDeploymentAdminController {

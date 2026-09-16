@@ -15,7 +15,7 @@ import java.util.List;
 
 @Slf4j
 @RestController
-@RequestMapping("/api/agent/deployments")
+@RequestMapping({"/api/v1/agent/deployments", "/api/agent/deployments"})
 @RequiredArgsConstructor
 public class AgentSoftwareDeploymentController {
 
