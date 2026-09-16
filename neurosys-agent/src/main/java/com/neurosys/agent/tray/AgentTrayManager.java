@@ -74,9 +74,9 @@ public class AgentTrayManager {
                 restartItem.addActionListener(e -> restartAgent());
                 popup.add(restartItem);
 
-                MenuItem exitTrayItem = new MenuItem("Exit Tray");
-                exitTrayItem.addActionListener(e -> removeTrayIcon());
-                popup.add(exitTrayItem);
+                MenuItem stopAgentItem = new MenuItem("Stop & Exit Agent");
+                stopAgentItem.addActionListener(e -> stopAgentAndExit());
+                popup.add(stopAgentItem);
 
                 Image defaultIcon = createStatusIcon(new Color(255, 193, 7)); // Orange initializing
                 trayIcon = new TrayIcon(defaultIcon, "NeuroSys Agent — Reconnecting", popup);
@@ -150,6 +150,18 @@ public class AgentTrayManager {
         } catch (Exception e) {
             log.error("Failed to trigger agent restart from tray", e);
         }
+    }
+
+    public synchronized void stopAgentAndExit() {
+        log.info("[INFO] User requested Agent shutdown. Terminating process...");
+        removeTrayIcon();
+        try {
+            File statusFile = new File("cache/agent-status.json");
+            if (statusFile.exists()) {
+                statusFile.delete();
+            }
+        } catch (Exception ignored) {}
+        System.exit(0);
     }
 
     public synchronized void removeTrayIcon() {
