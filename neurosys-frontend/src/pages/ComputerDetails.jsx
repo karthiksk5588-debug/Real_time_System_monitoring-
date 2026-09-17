@@ -346,37 +346,38 @@ const ComputerDetails = () => {
       <div className="space-y-6">
         {activeTab === 'metrics' && (
           <div className="card-elevated p-6 space-y-6">
-            <h3 className="font-headline-md text-headline-md font-bold text-on-surface">Telemetry Sample History</h3>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="bg-surface-container-low border-b border-outline-variant font-label-md text-label-md text-secondary">
-                    <th className="p-3">Timestamp</th>
-                    <th className="p-3 text-right">CPU Usage</th>
-                    <th className="p-3 text-right">RAM Usage</th>
-                    <th className="p-3 text-right">Free Memory</th>
-                    <th className="p-3 text-right">Free Storage</th>
-                    <th className="p-3 text-right">CPU Temp</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-outline-variant font-body-md text-body-md">
-                  {metricHistory.slice(0, 15).map((m, idx) => (
-                    <tr key={idx} className="hover:bg-surface-container-low transition-colors">
-                      <td className="p-3 font-mono-sm text-mono-sm text-secondary">
-                        {m.recordedAt ? new Date(m.recordedAt).toLocaleTimeString() : 'N/A'}
-                      </td>
-                      <td className="p-3 text-right font-mono-sm text-mono-sm font-bold text-primary">{Math.round(m.cpuUsagePercent ?? 0)}%</td>
-                      <td className="p-3 text-right font-mono-sm text-mono-sm font-bold text-[#10b981]">{Math.round(m.memoryUsagePercent ?? 0)}%</td>
-                      <td className="p-3 text-right font-mono-sm text-mono-sm text-secondary">{Math.round(m.memoryFreeMb ?? 0)} MB</td>
-                      <td className="p-3 text-right font-mono-sm text-mono-sm text-secondary">{Math.round(m.diskFreeGb ?? 0)} GB</td>
-                      <td className="p-3 text-right font-mono-sm text-mono-sm text-[#f59e0b]">{Math.round(m.cpuTemperature ?? 45)}°C</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="flex items-center justify-between border-b border-outline-variant pb-3">
+              <h3 className="font-headline-md text-headline-md font-bold text-on-surface flex items-center gap-2">
+                <Activity className="w-5 h-5 text-primary" /> Real-Time Workstation Status &amp; Hardware Profile
+              </h3>
+              <span className="font-mono-sm text-mono-sm text-emerald-700 bg-emerald-50 px-3 py-1 rounded-full font-bold border border-emerald-200">
+                🟢 Live 1s Telemetry Stream
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-1">
+                <span className="text-xs font-bold text-slate-500 uppercase block">Host Details</span>
+                <p className="text-sm font-extrabold text-slate-900">{computer?.hostname || 'N/A'}</p>
+                <p className="text-xs text-slate-600 font-semibold">IP: {computer?.ipAddress || '10.33.199.161'}</p>
+                <p className="text-xs text-slate-600 font-semibold">MAC: {computer?.macAddress || 'N/A'}</p>
+              </div>
+
+              <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-1">
+                <span className="text-xs font-bold text-slate-500 uppercase block">System Specifications</span>
+                <p className="text-sm font-extrabold text-slate-900">{computer?.cpuModel || 'Intel / AMD Processor'}</p>
+                <p className="text-xs text-slate-600 font-semibold">Total RAM: {computer?.totalRamMb ? `${Math.round(computer.totalRamMb / 1024)} GB` : 'N/A'}</p>
+                <p className="text-xs text-slate-600 font-semibold">OS: {computer?.osName || 'Windows'} {computer?.osVersion || ''}</p>
+              </div>
+
+              <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-1">
+                <span className="text-xs font-bold text-slate-500 uppercase block">Agent &amp; Network Health</span>
+                <p className="text-sm font-extrabold text-slate-900">Agent v{computer?.agentVersion || '1.0.0'}</p>
+                <p className="text-xs text-emerald-700 font-bold">Uptime: {computer?.uptimeSeconds ? `${Math.floor(computer.uptimeSeconds / 3600)}h ${Math.floor((computer.uptimeSeconds % 3600) / 60)}m` : 'Active'}</p>
+                <p className="text-xs text-slate-600 font-semibold">Internet: {computer?.internetConnected !== false ? 'Connected' : 'Disconnected'}</p>
+              </div>
+            </div>
           </div>
-          <ProcessTable computerId={id} />
-        </div>
         )}
 
         {activeTab === 'processes' && (

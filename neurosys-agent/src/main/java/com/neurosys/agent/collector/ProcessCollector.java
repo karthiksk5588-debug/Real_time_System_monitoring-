@@ -27,12 +27,20 @@ public class ProcessCollector {
         List<OSProcess> processes = os.getProcesses(null, OperatingSystem.ProcessSorting.CPU_DESC, limit);
         List<Map<String, Object>> result = new ArrayList<>();
         long totalMemory = systemInfo.getHardware().getMemory().getTotal();
+        int logicalCores = Math.max(1, systemInfo.getHardware().getProcessor().getLogicalProcessorCount());
 
         for (OSProcess p : processes) {
             Map<String, Object> map = new HashMap<>();
             map.put("pid", p.getProcessID());
             map.put("processName", p.getName());
-            map.put("cpuPercent", Math.round(p.getProcessCpuLoadCumulative() * 100.0) / 10.0);
+            
+            double rawCpu = p.getProcessCpuLoadBetweenTicks(p) * 100.0;
+            if (rawCpu <= 0.0) {
+                rawCpu = (p.getProcessCpuLoadCumulative() * 100.0) / logicalCores;
+            }
+            double normalizedCpu = Math.min(100.0, Math.max(0.0, Math.round(rawCpu * 10.0) / 10.0));
+
+            map.put("cpuPercent", normalizedCpu);
             map.put("memoryPercent", totalMemory > 0 ? Math.round(((double) p.getResidentSetSize() / totalMemory) * 1000.0) / 10.0 : 0.0);
             map.put("memoryUsedMb", Math.round((p.getResidentSetSize() / (1024.0 * 1024.0)) * 10.0) / 10.0);
             map.put("status", p.getState().name());

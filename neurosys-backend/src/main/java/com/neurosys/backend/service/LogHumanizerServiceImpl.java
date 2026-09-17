@@ -56,11 +56,6 @@ public class LogHumanizerServiceImpl implements LogHumanizerService {
         Computer computer = computerRepository.findById(computerId).orElse(null);
         if (computer == null) return Page.empty();
 
-        long count = systemLogRepository.countByComputerId(computerId);
-        if (count == 0) {
-            seedDefaultDiagnosticLogs(computer);
-        }
-
         Page<SystemLog> logs;
         if (logLevelStr != null && !logLevelStr.trim().isEmpty()) {
             LogLevel level = parseLogLevel(logLevelStr);
@@ -69,16 +64,6 @@ public class LogHumanizerServiceImpl implements LogHumanizerService {
             logs = systemLogRepository.findByComputerId(computerId, pageable);
         }
         return logs.map(this::mapToDto);
-    }
-
-    private void seedDefaultDiagnosticLogs(Computer computer) {
-        try {
-            ingestAndHumanizeLog(computer.getId(), 7001, "Service Control Manager", "Warning", "The Netlogon service depends on the Workstation service which failed to start.");
-            ingestAndHumanizeLog(computer.getId(), 51, "Disk", "Warning", "An error was detected on device \\Device\\Harddisk0\\DR0 during a paging operation.");
-            ingestAndHumanizeLog(computer.getId(), 1001, "Windows Error Reporting", "Information", "Fault bucket 148293021, type 5. Event Name: Kernel-Power BSOD recovery.");
-        } catch (Exception e) {
-            log.warn("Failed to seed default diagnostic logs for computer {}", computer.getHostname(), e);
-        }
     }
 
     private LogLevel parseLogLevel(String level) {

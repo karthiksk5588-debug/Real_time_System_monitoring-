@@ -50,6 +50,7 @@ public class SystemMetricsServiceImpl implements SystemMetricsService {
 
     private final Map<String, Instant> lastHistoricalSaveMap = new ConcurrentHashMap<>();
     private final Map<String, Deque<SystemMetricDto>> liveBufferMap = new ConcurrentHashMap<>();
+    private final Map<String, List<com.neurosys.backend.dto.request.ProcessInfoDto>> latestProcessesMap = new ConcurrentHashMap<>();
 
     private long getHistoryIntervalSeconds() {
         if (historyIntervalConfig == null) return 30L;
@@ -93,6 +94,7 @@ public class SystemMetricsServiceImpl implements SystemMetricsService {
 
         String topProcJson = null;
         if (request.getTopProcesses() != null && !request.getTopProcesses().isEmpty()) {
+            latestProcessesMap.put(computer.getId(), request.getTopProcesses());
             try {
                 topProcJson = objectMapper.writeValueAsString(request.getTopProcesses());
             } catch (Exception e) {
@@ -222,6 +224,11 @@ public class SystemMetricsServiceImpl implements SystemMetricsService {
         return systemMetricRepository.findLatestByComputerId(computerId)
                 .map(this::mapToDto)
                 .orElse(null);
+    }
+
+    @Override
+    public List<com.neurosys.backend.dto.request.ProcessInfoDto> getLatestProcesses(String computerId) {
+        return latestProcessesMap.getOrDefault(computerId, List.of());
     }
 
     private SystemMetricDto mapToDto(SystemMetric metric) {

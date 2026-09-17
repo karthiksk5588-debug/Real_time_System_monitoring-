@@ -25,6 +25,7 @@ public class ProcessMonitoringServiceImpl implements ProcessMonitoringService {
 
     private final ComputerRepository computerRepository;
     private final SystemMetricRepository systemMetricRepository;
+    private final SystemMetricsService systemMetricsService;
     private final ObjectMapper objectMapper;
 
     @Override
@@ -33,19 +34,17 @@ public class ProcessMonitoringServiceImpl implements ProcessMonitoringService {
         Computer computer = computerRepository.findById(computerId)
                 .orElseThrow(() -> new ResourceNotFoundException("Computer", "id", computerId));
 
-        SystemMetric latestMetric = systemMetricRepository.findLatestByComputerId(computerId).orElse(null);
-
-        List<ProcessInfoDto> liveProcesses = new ArrayList<>();
-        if (latestMetric != null && latestMetric.getTopProcessesJson() != null && !latestMetric.getTopProcessesJson().isEmpty()) {
-            try {
-                liveProcesses = objectMapper.readValue(latestMetric.getTopProcessesJson(), new TypeReference<List<ProcessInfoDto>>() {});
-            } catch (Exception e) {
-                log.warn("Failed to parse real process JSON from database for computer {}", computerId, e);
-            }
-        }
+        List<ProcessInfoDto> liveProcesses = new ArrayList<>(systemMetricsService.getLatestProcesses(computerId));
 
         if (liveProcesses.isEmpty()) {
-            liveProcesses = generateSampleProcesses();
+            SystemMetric latestMetric = systemMetricRepository.findLatestByComputerId(computerId).orElse(null);
+            if (latestMetric != null && latestMetric.getTopProcessesJson() != null && !latestMetric.getTopProcessesJson().isEmpty()) {
+                try {
+                    liveProcesses = objectMapper.readValue(latestMetric.getTopProcessesJson(), new TypeReference<List<ProcessInfoDto>>() {});
+                } catch (Exception e) {
+                    log.warn("Failed to parse real process JSON from database for computer {}", computerId, e);
+                }
+            }
         }
 
         // Filter by Search Query
@@ -90,22 +89,12 @@ public class ProcessMonitoringServiceImpl implements ProcessMonitoringService {
         return ProcessMonitoringResponse.builder()
                 .computerId(computer.getId())
                 .hostname(computer.getHostname())
-                .totalProcessesCount(latestMetric != null && latestMetric.getActiveProcessCount() != null ? latestMetric.getActiveProcessCount() : totalCount)
+                .totalProcessesCount(totalCount)
                 .topCpuProcesses(topCpu)
                 .topRamProcesses(topRam)
                 .processes(pagedProcesses)
                 .currentPage(page)
                 .totalPages(totalPages)
                 .build();
-    }
-
-    private List<ProcessInfoDto> generateSampleProcesses() {
-        return List.of(
-                ProcessInfoDto.builder().pid(4120).processName("chrome.exe").cpuPercent(34.5).memoryPercent(24.2).memoryUsedMb(1850.0).status("RUNNING").user("SYSTEM").build(),
-                ProcessInfoDto.builder().pid(1044).processName("java.exe").cpuPercent(18.2).memoryPercent(16.5).memoryUsedMb(1280.0).status("RUNNING").user("SYSTEM").build(),
-                ProcessInfoDto.builder().pid(892).processName("mysqld.exe").cpuPercent(12.4).memoryPercent(14.1).memoryUsedMb(1100.0).status("RUNNING").user("SYSTEM").build(),
-                ProcessInfoDto.builder().pid(2204).processName("python.exe").cpuPercent(9.8).memoryPercent(8.5).memoryUsedMb(650.0).status("RUNNING").user("USER").build(),
-                ProcessInfoDto.builder().pid(512).processName("explorer.exe").cpuPercent(4.2).memoryPercent(5.2).memoryUsedMb(410.0).status("RUNNING").user("USER").build()
-        );
     }
 }
