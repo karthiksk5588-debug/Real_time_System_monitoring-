@@ -14,8 +14,10 @@ import java.util.List;
 @AllArgsConstructor
 public class CreateDeploymentRequest {
 
-    @NotBlank(message = "Software package ID is required")
     private String softwarePackageId;
+    private String customAppName;
+    private String customInstallerUrl;
+    private String customSilentArgs;
 
     @NotBlank(message = "Lab ID is required")
     private String labId;

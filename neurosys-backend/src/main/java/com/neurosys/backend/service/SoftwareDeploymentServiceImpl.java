@@ -80,8 +80,33 @@ public class SoftwareDeploymentServiceImpl implements SoftwareDeploymentService 
     @Override
     @Transactional
     public DeploymentResponseDto createDeployment(CreateDeploymentRequest request, String username) {
-        SoftwarePackage pkg = packageRepository.findById(request.getSoftwarePackageId())
-                .orElseThrow(() -> new ResourceNotFoundException("SoftwarePackage", "id", request.getSoftwarePackageId()));
+        SoftwarePackage pkg;
+        if (request.getCustomInstallerUrl() != null && !request.getCustomInstallerUrl().isBlank()) {
+            String url = request.getCustomInstallerUrl().trim();
+            String name = (request.getCustomAppName() != null && !request.getCustomAppName().isBlank())
+                    ? request.getCustomAppName().trim()
+                    : "Direct Application (" + (url.contains("/") ? url.substring(url.lastIndexOf("/") + 1) : "App") + ")";
+            boolean isMsi = url.toLowerCase().contains(".msi");
+            String args = (request.getCustomSilentArgs() != null && !request.getCustomSilentArgs().isBlank())
+                    ? request.getCustomSilentArgs().trim()
+                    : (isMsi ? "/qn /norestart" : "/S");
+
+            pkg = packageRepository.save(SoftwarePackage.builder()
+                    .name(name)
+                    .version("Latest")
+                    .installerUrl(url)
+                    .installerType(isMsi ? com.neurosys.backend.enums.InstallerType.MSI : com.neurosys.backend.enums.InstallerType.EXE)
+                    .silentArguments(args)
+                    .checksum("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
+                    .supportedOs("Windows")
+                    .active(true)
+                    .build());
+        } else if (request.getSoftwarePackageId() != null && !request.getSoftwarePackageId().isBlank() && !"CUSTOM_LINK".equals(request.getSoftwarePackageId())) {
+            pkg = packageRepository.findById(request.getSoftwarePackageId())
+                    .orElseThrow(() -> new ResourceNotFoundException("SoftwarePackage", "id", request.getSoftwarePackageId()));
+        } else {
+            throw new IllegalArgumentException("Either select a software package or provide a direct installer download link.");
+        }
 
         Lab lab = labRepository.findById(request.getLabId())
                 .orElseThrow(() -> new ResourceNotFoundException("Lab", "id", request.getLabId()));

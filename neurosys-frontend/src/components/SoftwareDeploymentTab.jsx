@@ -53,6 +53,10 @@ const SoftwareDeploymentTab = () => {
   const [newPkgChecksum, setNewPkgChecksum] = useState('');
   const [addingPackage, setAddingPackage] = useState(false);
 
+  // Instant Direct Link Deploy State
+  const [directUrl, setDirectUrl] = useState('');
+  const [directAppName, setDirectAppName] = useState('');
+
   useEffect(() => {
     if (currentLab?.id) {
       setSelectedLabId(currentLab.id);
@@ -143,8 +147,18 @@ const SoftwareDeploymentTab = () => {
   };
 
   const handleCreateDeployment = async () => {
-    if (!selectedPackageId || !selectedLabId) {
-      setErrorMsg('Please select a software package and target lab.');
+    if (!selectedLabId) {
+      setErrorMsg('Please select target lab.');
+      return;
+    }
+
+    if (selectedPackageId === 'CUSTOM_LINK') {
+      if (!directUrl || !directUrl.trim()) {
+        setErrorMsg('Please enter the direct installer download URL.');
+        return;
+      }
+    } else if (!selectedPackageId) {
+      setErrorMsg('Please select a software package or choose Direct Link Deploy.');
       return;
     }
 
@@ -153,17 +167,32 @@ const SoftwareDeploymentTab = () => {
     setSuccessMsg(null);
 
     try {
-      const reqPayload = {
-        softwarePackageId: selectedPackageId,
-        labId: selectedLabId,
-        computerIds: selectedComputerIds.length > 0 ? selectedComputerIds : null,
-        expirationHours: Number(expirationHours) || 24
-      };
+      let reqPayload;
+      if (selectedPackageId === 'CUSTOM_LINK') {
+        reqPayload = {
+          customInstallerUrl: directUrl.trim(),
+          customAppName: directAppName.trim() || 'Direct Installer App',
+          labId: selectedLabId,
+          computerIds: selectedComputerIds.length > 0 ? selectedComputerIds : null,
+          expirationHours: Number(expirationHours) || 24
+        };
+      } else {
+        reqPayload = {
+          softwarePackageId: selectedPackageId,
+          labId: selectedLabId,
+          computerIds: selectedComputerIds.length > 0 ? selectedComputerIds : null,
+          expirationHours: Number(expirationHours) || 24
+        };
+      }
 
       const res = await metricsService.createSoftwareDeployment(reqPayload);
       setConfirmModalOpen(false);
       setSuccessMsg('Software deployment task created and dispatched to agents!');
       setSelectedComputerIds([]);
+      if (selectedPackageId === 'CUSTOM_LINK') {
+        setDirectUrl('');
+        setDirectAppName('');
+      }
       await loadDeployments();
     } catch (err) {
       setErrorMsg(err?.message || 'Failed to create deployment task');
@@ -391,13 +420,41 @@ const SoftwareDeploymentTab = () => {
               onChange={(e) => setSelectedPackageId(e.target.value)}
               className="w-full h-11 px-3 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-primary shadow-sm"
             >
+              <option value="CUSTOM_LINK">🔗 Direct Download Link / URL (Instant Deploy)</option>
               {packages.map(pkg => (
                 <option key={pkg.id} value={pkg.id}>
                   {pkg.name} v{pkg.version} ({pkg.installerType})
                 </option>
               ))}
             </select>
-            {activePkg && (
+
+            {selectedPackageId === 'CUSTOM_LINK' ? (
+              <div className="p-3 bg-blue-50/70 border border-blue-200 rounded-xl space-y-2 text-xs">
+                <div className="space-y-1">
+                  <label className="font-extrabold text-blue-900 block">Direct Download Link (.exe or .msi) *</label>
+                  <input
+                    type="url"
+                    required
+                    placeholder="https://example.com/software.exe"
+                    value={directUrl}
+                    onChange={(e) => setDirectUrl(e.target.value)}
+                    className="w-full h-9 px-3 bg-white border border-blue-300 rounded-lg text-xs font-mono font-bold text-slate-900 focus:outline-none focus:border-primary shadow-sm"
+                  />
+                  <p className="text-[10px] text-slate-500 font-medium">Direct URL to installer. Auto-detects EXE or MSI silently.</p>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="font-bold text-slate-700 block">App Name (Optional)</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Custom Software Tool"
+                    value={directAppName}
+                    onChange={(e) => setDirectAppName(e.target.value)}
+                    className="w-full h-9 px-3 bg-white border border-blue-300 rounded-lg text-xs font-bold text-slate-900 focus:outline-none focus:border-primary shadow-sm"
+                  />
+                </div>
+              </div>
+            ) : activePkg && (
               <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg text-[11px] text-slate-700 space-y-1">
                 <div className="font-bold text-slate-900 flex items-center gap-1">
                   <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
