@@ -36,6 +36,7 @@ const Software = () => {
   const [activeMainTab, setActiveMainTab] = useState('INVENTORY'); // INVENTORY | DEPLOYMENT
 
   useEffect(() => {
+    setSelectedComputerId('ALL');
     loadData();
     const interval = setInterval(loadData, 4000);
     return () => clearInterval(interval);
@@ -78,7 +79,8 @@ const Software = () => {
       const fleetData = fleetRes?.data || fleetRes;
       if (fleetData && Array.isArray(fleetData.softwareList) && fleetData.softwareList.length > 0) {
         rawSwList = fleetData.softwareList;
-        if (Array.isArray(fleetData.computers) && fleetData.computers.length > 0) {
+        // Only use fleet computers as fallback if compList was empty
+        if (compList.length === 0 && Array.isArray(fleetData.computers) && fleetData.computers.length > 0) {
           compList = fleetData.computers;
         }
       } else if (Array.isArray(allSwRes)) {
@@ -87,9 +89,19 @@ const Software = () => {
         rawSwList = allSwRes.data;
       }
 
-      const safeCompList = compList.filter(Boolean);
+      let safeCompList = compList.filter(Boolean);
+
+      // Ensure computers are strictly scoped to currentLab if specified
+      if (currentLab?.id && currentLab.id !== 'ALL') {
+        safeCompList = safeCompList.filter(c => 
+          String(c.labId) === String(currentLab.id) ||
+          c.labName === currentLab.name ||
+          (c.lab && String(c.lab.id) === String(currentLab.id))
+        );
+      }
+
       const safeSwList = rawSwList.filter(Boolean).map(item => {
-        const matchedComp = safeCompList.find(c => c.id === item.computerId || c.hostname === item.computerHostname);
+        const matchedComp = safeCompList.find(c => String(c.id) === String(item.computerId) || c.hostname === item.computerHostname);
         return {
           ...item,
           computerId: item.computerId || matchedComp?.id || 'COMP-1',
@@ -117,7 +129,12 @@ const Software = () => {
   // Filter software by selected computer dropdown
   const scopedList = selectedComputerId === 'ALL'
     ? softwareList
-    : softwareList.filter(s => s.computerId === selectedComputerId);
+    : softwareList.filter(s => {
+        if (!s) return false;
+        const targetComp = computers.find(c => String(c.id) === String(selectedComputerId));
+        return String(s.computerId) === String(selectedComputerId) ||
+               (targetComp && s.computerHostname === targetComp.hostname);
+      });
 
   // Group software into package catalog items
   const catalogMap = new Map();
@@ -161,40 +178,50 @@ const Software = () => {
 
   const catalogList = Array.from(catalogMap.values());
 
-  // MANDATORY REQUIREMENT: If searchQuery is empty, filteredCatalog MUST BE EMPTY ([]).
-  // Table remains empty until user types a search query.
-  const filteredCatalog = !searchQuery.trim() ? [] : catalogList.filter(pkg => {
-    const q = searchQuery.toLowerCase().trim();
-    const dName = (pkg.displayName || '').toLowerCase();
-    const fName = (pkg.fullName || '').toLowerCase();
-    const pub = (pkg.publisher || '').toLowerCase();
+  // Filter catalog list:
+  // If a specific computer is selected, display ALL installed applications for that computer (or filter if query typed).
+  // If 'ALL' computers is selected and query is empty, show empty state prompt requiring computer selection or search query.
+  const filteredCatalog = selectedComputerId !== 'ALL'
+    ? (!searchQuery.trim() ? catalogList : catalogList.filter(pkg => {
+        const q = searchQuery.toLowerCase().trim();
+        const dName = (pkg.displayName || '').toLowerCase();
+        const fName = (pkg.fullName || '').toLowerCase();
+        const pub = (pkg.publisher || '').toLowerCase();
+        return dName.includes(q) || fName.includes(q) || pub.includes(q);
+      }))
+    : (!searchQuery.trim() ? [] : catalogList.filter(pkg => {
+        const q = searchQuery.toLowerCase().trim();
+        const dName = (pkg.displayName || '').toLowerCase();
+        const fName = (pkg.fullName || '').toLowerCase();
+        const pub = (pkg.publisher || '').toLowerCase();
 
-    if (q === 'java' || q === 'jdk' || q === 'jre' || q === 'openjdk') {
-      return dName.includes('java') || fName.includes('openjdk') || fName.includes('jdk') || fName.includes('jre') || fName.includes('java');
-    }
-    if (q === 'python' || q === 'pyhton' || q === 'pythn') {
-      return dName.includes('python') || fName.includes('python');
-    }
-    if (q === 'vscode' || q === 'vs code' || q === 'code') {
-      return dName.includes('visual studio code') || fName.includes('visual studio code') || fName.includes('vscode') || fName.includes('code');
-    }
-    if (q === 'mysql' || q === 'sql') {
-      return dName.includes('mysql') || fName.includes('mysql');
-    }
-    if (q === 'chrome' || q === 'google chrome') {
-      return dName.includes('chrome') || fName.includes('chrome');
-    }
-    if (q === 'git') {
-      return dName.includes('git') || fName.includes('git');
-    }
+        if (q === 'java' || q === 'jdk' || q === 'jre' || q === 'openjdk') {
+          return dName.includes('java') || fName.includes('openjdk') || fName.includes('jdk') || fName.includes('jre') || fName.includes('java');
+        }
+        if (q === 'python' || q === 'pyhton' || q === 'pythn') {
+          return dName.includes('python') || fName.includes('python');
+        }
+        if (q === 'vscode' || q === 'vs code' || q === 'code') {
+          return dName.includes('visual studio code') || fName.includes('visual studio code') || fName.includes('vscode') || fName.includes('code');
+        }
+        if (q === 'mysql' || q === 'sql') {
+          return dName.includes('mysql') || fName.includes('mysql');
+        }
+        if (q === 'chrome' || q === 'google chrome') {
+          return dName.includes('chrome') || fName.includes('chrome');
+        }
+        if (q === 'git') {
+          return dName.includes('git') || fName.includes('git');
+        }
 
-    return dName.includes(q) || fName.includes(q) || pub.includes(q);
-  });
+        return dName.includes(q) || fName.includes(q) || pub.includes(q);
+      }));
 
-  // Calculate card counts (0 when search is empty, matching count when searching)
+  // Calculate card counts
   const totalComputersCount = computers.length;
-  const displayApplicationsCount = searchQuery.trim() ? filteredCatalog.reduce((acc, p) => acc + p.items.length, 0) : 0;
-  const displayDistinctPackagesCount = searchQuery.trim() ? filteredCatalog.length : 0;
+  const displayApplicationsCount = (selectedComputerId !== 'ALL' || searchQuery.trim())
+    ? filteredCatalog.reduce((acc, p) => acc + p.items.length, 0)
+    : 0;
 
   // Selected Software computer breakdown (e.g. Java)
   const targetSoftwareItems = softwareList.filter(item => {
@@ -301,228 +328,206 @@ const Software = () => {
       ) : (
         <>
           {/* Part 1: Top Summary Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 animate-fade-in-up">
-        {/* Total Computers */}
-        <div className="card-elevated p-4 flex flex-col justify-between border border-slate-200">
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-label-md font-label-md text-slate-700 font-bold">Total Computers</span>
-            <Monitor className="w-4 h-4 text-primary" />
-          </div>
-          <div>
-            <div className="text-display font-display text-slate-900 font-extrabold">{totalComputersCount}</div>
-            <div className="text-body-md font-body-md text-slate-700 mt-0.5 font-semibold">Computers Scanned</div>
-          </div>
-        </div>
-
-        {/* Total Software Applications */}
-        <div className="card-elevated p-4 flex flex-col justify-between border border-slate-200">
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-label-md font-label-md text-slate-700 font-bold">Software Applications</span>
-            <PackageCheck className="w-4 h-4 text-emerald-600 font-bold" />
-          </div>
-          <div>
-            <div className="text-display font-display text-slate-900 font-extrabold">
-              {searchQuery.trim() ? displayApplicationsCount : 0}
-            </div>
-            <div className="text-body-md font-body-md text-emerald-700 mt-0.5 font-semibold">
-              {searchQuery.trim() ? 'Matching Scanned Records' : 'Search Required'}
-            </div>
-          </div>
-        </div>
-
-        {/* Distinct Packages */}
-        <div className="card-elevated p-4 flex flex-col justify-between border-l-4 border-l-primary border-y border-r border-slate-200">
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-label-md font-label-md text-primary font-bold">Distinct Packages</span>
-            <Layers className="w-4 h-4 text-primary font-bold" />
-          </div>
-          <div>
-            <div className="text-display font-display text-slate-900 font-extrabold">
-              {searchQuery.trim() ? displayDistinctPackagesCount : 0}
-            </div>
-            <div className="text-body-md font-body-md text-primary mt-0.5 font-semibold">
-              {searchQuery.trim() ? 'Matching Packages' : 'Search Required'}
-            </div>
-          </div>
-        </div>
-
-        {/* Last Inventory Sync Status */}
-        <div className="card-elevated p-4 flex flex-col justify-between border border-slate-200">
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-label-md font-label-md text-slate-700 font-bold">Last Inventory Sync</span>
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 status-dot-active"></span>
-          </div>
-          <div>
-            <div className="text-headline-md font-headline-md text-slate-900 font-extrabold">Just now</div>
-            <div className="text-body-md font-body-md text-emerald-700 mt-0.5 font-semibold">🟢 Synced &amp; Active</div>
-          </div>
-        </div>
-      </div>
-
-      {/* CATALOG VIEW MODE */}
-      {!selectedSoftwareName ? (
-        <div className="space-y-6">
-          {/* Toolbar: Search & Computer Dropdown */}
-          <div className="card-elevated p-4 flex flex-col md:flex-row items-center justify-between gap-4 border border-slate-200">
-            <div className="relative w-full md:w-96">
-              <Search className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search software (e.g. java, python, chrome, git)..."
-                className="w-full pl-10 pr-10 py-2.5 bg-slate-50 border border-slate-300 rounded-lg text-xs font-bold text-slate-900 focus:outline-none focus:border-primary shadow-inner"
-              />
-              {searchQuery && (
-                <button 
-                  onClick={() => setSearchQuery('')}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 cursor-pointer"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              )}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 animate-fade-in-up">
+            {/* Total Computers */}
+            <div className="card-elevated p-4 flex flex-col justify-between border border-slate-200">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-label-md font-label-md text-slate-700 font-bold">Total Computers</span>
+                <Monitor className="w-4 h-4 text-primary" />
+              </div>
+              <div>
+                <div className="text-display font-display text-slate-900 font-extrabold">{totalComputersCount}</div>
+                <div className="text-body-md font-body-md text-slate-700 mt-0.5 font-semibold">Computers Scanned</div>
+              </div>
             </div>
 
-            <div className="flex items-center gap-3">
-              <span className="text-label-md font-label-md text-slate-900 font-extrabold">Filter Computer:</span>
-              <select
-                value={selectedComputerId}
-                onChange={(e) => setSelectedComputerId(e.target.value)}
-                className="h-10 px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-body-md font-bold text-slate-900 focus:outline-none"
-              >
-                <option value="ALL">All Computers ({computers.length})</option>
-                {computers.map(c => (
-                  <option key={c.id} value={c.id}>
-                    {c.hostname} {c.hostname === 'LAPTOP-PALBUQS2' ? '(Your Admin Laptop)' : ''}
-                  </option>
-                ))}
-              </select>
+            {/* Total Software Applications */}
+            <div className="card-elevated p-4 flex flex-col justify-between border border-slate-200">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-label-md font-label-md text-slate-700 font-bold">Software Applications</span>
+                <PackageCheck className="w-4 h-4 text-emerald-600 font-bold" />
+              </div>
+              <div>
+                <div className="text-display font-display text-slate-900 font-extrabold">
+                  {displayApplicationsCount}
+                </div>
+                <div className="text-body-md font-body-md text-emerald-700 mt-0.5 font-semibold">
+                  {selectedComputerId !== 'ALL' ? 'Installed on Selected Computer' : (searchQuery.trim() ? 'Matching Scanned Records' : 'Select Computer or Search')}
+                </div>
+              </div>
             </div>
           </div>
 
-          {/* INSTANT WORKSTATION INSTALLATION STATUS CARD WHEN SEARCHING */}
-          {searchQuery.trim() && (
-            <div className="card-elevated p-5 border-l-4 border-l-primary border-y border-r border-slate-200 space-y-3 animate-fade-in-up">
-              <div className="flex items-center justify-between border-b border-slate-200 pb-2">
-                <h4 className="text-headline-md font-extrabold text-slate-900 flex items-center gap-2">
-                  <PackageCheck className="w-5 h-5 text-primary" />
-                  Workstation Installation Status for "{searchQuery}"
-                </h4>
-                <span className="text-xs font-bold text-slate-600">
-                  Real data across {computers.length} computer(s)
-                </span>
+          {/* CATALOG VIEW MODE */}
+          {!selectedSoftwareName ? (
+            <div className="space-y-6">
+              {/* Toolbar: Search & Computer Dropdown */}
+              <div className="card-elevated p-4 flex flex-col md:flex-row items-center justify-between gap-4 border border-slate-200">
+                <div className="relative w-full md:w-96">
+                  <Search className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search software (e.g. java, python, chrome, git)..."
+                    className="w-full pl-10 pr-10 py-2.5 bg-slate-50 border border-slate-300 rounded-lg text-xs font-bold text-slate-900 focus:outline-none focus:border-primary shadow-inner"
+                  />
+                  {searchQuery && (
+                    <button 
+                      onClick={() => setSearchQuery('')}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 cursor-pointer"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <span className="text-label-md font-label-md text-slate-900 font-extrabold">Filter Computer:</span>
+                  <select
+                    value={selectedComputerId}
+                    onChange={(e) => setSelectedComputerId(e.target.value)}
+                    className="h-10 px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-body-md font-bold text-slate-900 focus:outline-none cursor-pointer"
+                  >
+                    <option value="ALL">All Computers ({computers.length})</option>
+                    {computers.map(c => (
+                      <option key={c.id} value={c.id}>
+                        {c.hostname} {c.hostname === 'LAPTOP-PALBUQS2' ? '(Your Admin Laptop)' : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-                {computers.length > 0 ? (
-                  computers.map(comp => {
-                    const match = softwareList.find(s => {
-                      const isComp = (s.computerId === comp.id || s.computerHostname === comp.hostname);
-                      if (!isComp) return false;
-                      const rawName = (s.name || '').toLowerCase();
-                      const q = searchQuery.toLowerCase().trim();
-                      if (q === 'java') {
-                        return rawName.includes('java') || rawName.includes('openjdk') || rawName.includes('jdk') || rawName.includes('jre');
-                      }
-                      return rawName.includes(q);
-                    });
-                    const hasScan = softwareList.some(s => s.computerId === comp.id || s.computerHostname === comp.hostname);
-
-                    let statusBadge = '🔴 NOT INSTALLED';
-                    let badgeStyle = 'bg-red-500/20 text-red-700 border-red-500/30';
-                    let versionText = 'Not found on this computer';
-
-                    if (match) {
-                      statusBadge = '🟢 INSTALLED';
-                      badgeStyle = 'bg-emerald-500/20 text-emerald-700 border-emerald-500/30';
-                      versionText = `Version: ${match.version || 'Detected'} (${match.name})`;
-                    } else if (!hasScan) {
-                      statusBadge = '⚪ INVENTORY UNAVAILABLE';
-                      badgeStyle = 'bg-slate-200 text-slate-700 border-slate-300';
-                      versionText = 'Waiting for agent scan';
-                    }
-
-                    return (
-                      <div key={comp.id} className="p-3 bg-slate-50 border border-slate-200 rounded-lg flex flex-col justify-between space-y-2">
-                        <div className="flex items-center justify-between">
-                          <span className="font-bold text-slate-900 text-xs">
-                            {comp.hostname} {comp.hostname === 'LAPTOP-PALBUQS2' ? '(Your Admin Laptop)' : ''}
-                          </span>
-                          <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full border uppercase ${badgeStyle}`}>
-                            {statusBadge}
-                          </span>
-                        </div>
-                        <div className="text-[11px] text-slate-700 font-semibold truncate" title={versionText}>
-                          {versionText}
-                        </div>
-                      </div>
-                    );
-                  })
-                ) : (
-                  <div className="col-span-3 text-center text-xs font-semibold text-slate-600 p-2">
-                    Connecting to workstations...
+              {/* INSTANT WORKSTATION INSTALLATION STATUS CARD WHEN SEARCHING */}
+              {searchQuery.trim() && (
+                <div className="card-elevated p-5 border-l-4 border-l-primary border-y border-r border-slate-200 space-y-3 animate-fade-in-up">
+                  <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+                    <h4 className="text-headline-md font-extrabold text-slate-900 flex items-center gap-2">
+                      <PackageCheck className="w-5 h-5 text-primary" />
+                      Workstation Installation Status for "{searchQuery}"
+                    </h4>
+                    <span className="text-xs font-bold text-slate-600">
+                      Real data across {computers.length} computer(s)
+                    </span>
                   </div>
-                )}
-              </div>
-            </div>
-          )}
 
-          {/* Software Catalog Table */}
-          <div className="card-elevated p-6 border border-slate-200 space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-200 pb-3">
-              <h3 className="font-headline-md text-headline-md font-bold text-slate-900 flex items-center gap-2">
-                <PackageCheck className="w-5 h-5 text-primary" />
-                {searchQuery.trim() 
-                  ? `Search Results for "${searchQuery}" (${filteredCatalog.length})` 
-                  : 'Installed Software Catalog'}
-              </h3>
-              <span className="text-xs text-slate-700 font-bold">
-                {searchQuery.trim() ? 'Click any application row to view computer breakdown details' : 'Search to inspect software'}
-              </span>
-            </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                    {computers.length > 0 ? (
+                      computers.map(comp => {
+                        const match = softwareList.find(s => {
+                          const isComp = (String(s.computerId) === String(comp.id) || s.computerHostname === comp.hostname);
+                          if (!isComp) return false;
+                          const rawName = (s.name || '').toLowerCase();
+                          const q = searchQuery.toLowerCase().trim();
+                          if (q === 'java') {
+                            return rawName.includes('java') || rawName.includes('openjdk') || rawName.includes('jdk') || rawName.includes('jre');
+                          }
+                          return rawName.includes(q);
+                        });
+                        const hasScan = softwareList.some(s => String(s.computerId) === String(comp.id) || s.computerHostname === comp.hostname);
 
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse min-w-[700px]">
-                <thead>
-                  <tr className="bg-slate-100 border-b border-slate-200 text-label-md font-label-md text-slate-900 font-extrabold">
-                    <th className="p-3">Application Name</th>
-                    <th className="p-3">Publisher</th>
-                    <th className="p-3">Computers Installed</th>
-                    <th className="p-3">Detected Version(s)</th>
-                    <th className="p-3">Status</th>
-                    <th className="p-3 text-right">Action</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-200 font-body-md text-body-md text-slate-800 font-medium">
-                  {loading ? (
-                    <tr>
-                      <td colSpan="6" className="p-8 text-center text-slate-700 font-bold space-y-2">
-                        <RefreshCw className="w-6 h-6 animate-spin text-primary mx-auto mb-2" />
-                        <div>Loading software inventory from backend...</div>
-                      </td>
-                    </tr>
-                  ) : errorMsg ? (
-                    <tr>
-                      <td colSpan="6" className="p-8 text-center text-red-600 font-bold space-y-2">
-                        <AlertTriangle className="w-6 h-6 text-red-600 mx-auto mb-2" />
-                        <div>{errorMsg}</div>
-                        <button onClick={handleRefresh} className="px-4 py-2 bg-primary text-white rounded-lg text-xs font-bold cursor-pointer mt-2">
-                          Retry Connection
-                        </button>
-                      </td>
-                    </tr>
-                  ) : !searchQuery.trim() ? (
-                    /* INITIAL & CLEARED SEARCH MANDATORY EMPTY STATE */
-                    <tr>
-                      <td colSpan="6" className="p-12 text-center text-slate-600 font-medium space-y-2">
-                        <Search className="w-10 h-10 text-slate-400 mx-auto mb-3" />
-                        <div className="text-slate-900 font-extrabold text-base">Search for a software application to view its installation status.</div>
-                        <p className="text-xs text-slate-500 max-w-md mx-auto">
-                          Type an application name above (e.g. <button onClick={() => setSearchQuery('java')} className="font-mono text-primary font-extrabold hover:underline cursor-pointer">java</button>, <button onClick={() => setSearchQuery('python')} className="font-mono text-primary font-extrabold hover:underline cursor-pointer">python</button>, <button onClick={() => setSearchQuery('chrome')} className="font-mono text-primary font-extrabold hover:underline cursor-pointer">chrome</button>, <button onClick={() => setSearchQuery('git')} className="font-mono text-primary font-extrabold hover:underline cursor-pointer">git</button>) to inspect installation status across lab computers.
-                        </p>
-                      </td>
-                    </tr>
-                  ) : filteredCatalog.length > 0 ? (
+                        let statusBadge = '🔴 NOT INSTALLED';
+                        let badgeStyle = 'bg-red-500/20 text-red-700 border-red-500/30';
+                        let versionText = 'Not found on this computer';
+
+                        if (match) {
+                          statusBadge = '🟢 INSTALLED';
+                          badgeStyle = 'bg-emerald-500/20 text-emerald-700 border-emerald-500/30';
+                          versionText = `Version: ${match.version || 'Detected'} (${match.name})`;
+                        } else if (!hasScan) {
+                          statusBadge = '⚪ INVENTORY UNAVAILABLE';
+                          badgeStyle = 'bg-slate-200 text-slate-700 border-slate-300';
+                          versionText = 'Waiting for agent scan';
+                        }
+
+                        return (
+                          <div key={comp.id} className="p-3 bg-slate-50 border border-slate-200 rounded-lg flex flex-col justify-between space-y-2">
+                            <div className="flex items-center justify-between">
+                              <span className="font-bold text-slate-900 text-xs">
+                                {comp.hostname} {comp.hostname === 'LAPTOP-PALBUQS2' ? '(Your Admin Laptop)' : ''}
+                              </span>
+                              <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full border uppercase ${badgeStyle}`}>
+                                {statusBadge}
+                              </span>
+                            </div>
+                            <div className="text-[11px] text-slate-700 font-semibold truncate" title={versionText}>
+                              {versionText}
+                            </div>
+                          </div>
+                        );
+                      })
+                    ) : (
+                      <div className="col-span-3 text-center text-xs font-semibold text-slate-600 p-2">
+                        Connecting to workstations...
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Software Catalog Table */}
+              <div className="card-elevated p-6 border border-slate-200 space-y-4">
+                <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+                  <h3 className="font-headline-md text-headline-md font-bold text-slate-900 flex items-center gap-2">
+                    <PackageCheck className="w-5 h-5 text-primary" />
+                    {selectedComputerId !== 'ALL'
+                      ? (searchQuery.trim() 
+                          ? `Search Results for "${searchQuery}" (${filteredCatalog.length})` 
+                          : `Installed Software on ${computers.find(c => String(c.id) === String(selectedComputerId))?.hostname || 'Selected Computer'} (${filteredCatalog.length})`)
+                      : (searchQuery.trim() 
+                          ? `Search Results for "${searchQuery}" (${filteredCatalog.length})` 
+                          : 'Installed Software Catalog')}
+                  </h3>
+                  <span className="text-xs text-slate-700 font-bold">
+                    {selectedComputerId !== 'ALL'
+                      ? 'Showing all applications installed on selected workstation'
+                      : (searchQuery.trim() ? 'Click any application row to view computer breakdown details' : 'Select a computer or search to inspect software')}
+                  </span>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse min-w-[700px]">
+                    <thead>
+                      <tr className="bg-slate-100 border-b border-slate-200 text-label-md font-label-md text-slate-900 font-extrabold">
+                        <th className="p-3">Application Name</th>
+                        <th className="p-3">Publisher</th>
+                        <th className="p-3">Computers Installed</th>
+                        <th className="p-3">Detected Version(s)</th>
+                        <th className="p-3">Status</th>
+                        <th className="p-3 text-right">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200 font-body-md text-body-md text-slate-800 font-medium">
+                      {loading ? (
+                        <tr>
+                          <td colSpan="6" className="p-8 text-center text-slate-700 font-bold space-y-2">
+                            <RefreshCw className="w-6 h-6 animate-spin text-primary mx-auto mb-2" />
+                            <div>Loading software inventory from backend...</div>
+                          </td>
+                        </tr>
+                      ) : errorMsg ? (
+                        <tr>
+                          <td colSpan="6" className="p-8 text-center text-red-600 font-bold space-y-2">
+                            <AlertTriangle className="w-6 h-6 text-red-600 mx-auto mb-2" />
+                            <div>{errorMsg}</div>
+                            <button onClick={handleRefresh} className="px-4 py-2 bg-primary text-white rounded-lg text-xs font-bold cursor-pointer mt-2">
+                              Retry Connection
+                            </button>
+                          </td>
+                        </tr>
+                      ) : (!searchQuery.trim() && selectedComputerId === 'ALL') ? (
+                        /* INITIAL & CLEARED SEARCH MANDATORY EMPTY STATE WHEN ALL COMPUTERS IS SELECTED */
+                        <tr>
+                          <td colSpan="6" className="p-12 text-center text-slate-600 font-medium space-y-2">
+                            <Search className="w-10 h-10 text-slate-400 mx-auto mb-3" />
+                            <div className="text-slate-900 font-extrabold text-base">Select a computer from the dropdown above or search for an application.</div>
+                            <p className="text-xs text-slate-500 max-w-md mx-auto">
+                              Choose a workstation from the "Filter Computer" dropdown to view all software installed on it, or type an application name to search across the lab.
+                            </p>
+                          </td>
+                        </tr>
+                      ) : filteredCatalog.length > 0 ? (
                     filteredCatalog.map((pkg, idx) => {
                       const count = pkg.installedComputers.size;
 
