@@ -18,7 +18,8 @@ import {
   ChevronUp,
   DownloadCloud,
   FileCode,
-  ShieldCheck
+  ShieldCheck,
+  Plus
 } from 'lucide-react';
 
 const SoftwareDeploymentTab = () => {
@@ -41,6 +42,16 @@ const SoftwareDeploymentTab = () => {
   const [confirmModalOpen, setConfirmModalOpen] = useState(false);
   const [selectedDeployment, setSelectedDeployment] = useState(null);
   const [detailModalOpen, setDetailModalOpen] = useState(false);
+
+  // Custom Software Package Modal State
+  const [addPackageModalOpen, setAddPackageModalOpen] = useState(false);
+  const [newPkgName, setNewPkgName] = useState('');
+  const [newPkgVersion, setNewPkgVersion] = useState('');
+  const [newPkgUrl, setNewPkgUrl] = useState('');
+  const [newPkgType, setNewPkgType] = useState('EXE');
+  const [newPkgSilentArgs, setNewPkgSilentArgs] = useState('/S');
+  const [newPkgChecksum, setNewPkgChecksum] = useState('');
+  const [addingPackage, setAddingPackage] = useState(false);
 
   useEffect(() => {
     if (currentLab?.id) {
@@ -161,6 +172,56 @@ const SoftwareDeploymentTab = () => {
     }
   };
 
+  const handleAddCustomPackage = async (e) => {
+    if (e && e.preventDefault) e.preventDefault();
+    if (!newPkgName.trim() || !newPkgVersion.trim() || !newPkgUrl.trim()) {
+      setErrorMsg('Please enter Application Name, Version, and Installer Download URL.');
+      return;
+    }
+
+    setAddingPackage(true);
+    setErrorMsg(null);
+    try {
+      const pkgPayload = {
+        name: newPkgName.trim(),
+        version: newPkgVersion.trim(),
+        installerUrl: newPkgUrl.trim(),
+        installerType: newPkgType,
+        silentArguments: newPkgSilentArgs.trim() || (newPkgType === 'MSI' ? '/qn /norestart' : '/S'),
+        checksum: newPkgChecksum.trim() || null,
+        supportedOs: 'Windows',
+        active: true
+      };
+
+      const createdRes = await metricsService.addDeploymentPackage(pkgPayload);
+      const createdPkg = createdRes?.data || createdRes;
+
+      setSuccessMsg(`Custom application "${newPkgName.trim()}" registered successfully!`);
+      setAddPackageModalOpen(false);
+
+      // Reset form
+      setNewPkgName('');
+      setNewPkgVersion('');
+      setNewPkgUrl('');
+      setNewPkgChecksum('');
+      setNewPkgSilentArgs('/S');
+
+      // Reload packages and set active
+      const pkgsRes = await metricsService.getDeploymentPackages().catch(() => []);
+      const pkgList = Array.isArray(pkgsRes) ? pkgsRes : (pkgsRes?.data || []);
+      setPackages(pkgList);
+      if (createdPkg?.id) {
+        setSelectedPackageId(createdPkg.id);
+      } else if (pkgList.length > 0) {
+        setSelectedPackageId(pkgList[pkgList.length - 1].id);
+      }
+    } catch (err) {
+      setErrorMsg(err?.message || 'Failed to register custom software package');
+    } finally {
+      setAddingPackage(false);
+    }
+  };
+
   const handleCancelDeployment = async (depId) => {
     if (!window.confirm('Are you sure you want to cancel this deployment task? Pending/Downloading agents will abort.')) {
       return;
@@ -258,10 +319,20 @@ const SoftwareDeploymentTab = () => {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {/* 1. Software Package Selector */}
           <div className="space-y-2">
-            <label className="text-xs font-extrabold text-slate-900 flex items-center gap-1.5">
-              <Package className="w-4 h-4 text-primary" />
-              1. Approved Software Package:
-            </label>
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-extrabold text-slate-900 flex items-center gap-1.5">
+                <Package className="w-4 h-4 text-primary" />
+                1. Software Package:
+              </label>
+              <button
+                type="button"
+                onClick={() => setAddPackageModalOpen(true)}
+                className="px-2 py-1 bg-primary/10 hover:bg-primary/20 text-primary border border-primary/30 rounded-lg text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Add Custom App</span>
+              </button>
+            </div>
             <select
               value={selectedPackageId}
               onChange={(e) => setSelectedPackageId(e.target.value)}
@@ -611,6 +682,134 @@ const SoftwareDeploymentTab = () => {
                 Close
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ADD CUSTOM SOFTWARE PACKAGE MODAL */}
+      {addPackageModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-xl w-full p-6 space-y-6 shadow-2xl border border-slate-200 animate-fade-in-up max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-slate-200 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-primary/20 text-primary flex items-center justify-center font-bold">
+                  <Plus className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-extrabold text-slate-900">Register Custom Application / Software Installer</h3>
+                  <p className="text-xs text-slate-600 font-semibold">Add any custom Windows software (.exe or .msi) to deploy to lab computers</p>
+                </div>
+              </div>
+
+              <button
+                onClick={() => setAddPackageModalOpen(false)}
+                className="w-8 h-8 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 flex items-center justify-center font-bold cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleAddCustomPackage} className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-slate-800">Application Name *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. VLC Media Player"
+                    value={newPkgName}
+                    onChange={(e) => setNewPkgName(e.target.value)}
+                    className="w-full h-10 px-3 bg-slate-50 border border-slate-300 rounded-lg text-xs font-bold text-slate-900 focus:outline-none focus:border-primary"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-slate-800">Version *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. 3.0.20"
+                    value={newPkgVersion}
+                    onChange={(e) => setNewPkgVersion(e.target.value)}
+                    className="w-full h-10 px-3 bg-slate-50 border border-slate-300 rounded-lg text-xs font-bold text-slate-900 focus:outline-none focus:border-primary"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-slate-800">Direct Download URL (.exe or .msi) *</label>
+                <input
+                  type="url"
+                  required
+                  placeholder="https://example.com/download/installer.exe"
+                  value={newPkgUrl}
+                  onChange={(e) => setNewPkgUrl(e.target.value)}
+                  className="w-full h-10 px-3 bg-slate-50 border border-slate-300 rounded-lg text-xs font-mono font-bold text-slate-900 focus:outline-none focus:border-primary"
+                />
+                <p className="text-[11px] text-slate-500 font-medium">Must be a direct HTTP/HTTPS URL accessible by target workstation agents.</p>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-slate-800">Installer Type *</label>
+                  <select
+                    value={newPkgType}
+                    onChange={(e) => {
+                      const t = e.target.value;
+                      setNewPkgType(t);
+                      if (t === 'MSI') setNewPkgSilentArgs('/qn /norestart');
+                      else setNewPkgSilentArgs('/S');
+                    }}
+                    className="w-full h-10 px-3 bg-slate-50 border border-slate-300 rounded-lg text-xs font-bold text-slate-900 focus:outline-none focus:border-primary"
+                  >
+                    <option value="EXE">EXE Executable Installer</option>
+                    <option value="MSI">MSI Windows Installer Package</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-slate-800">Silent Installation Arguments</label>
+                  <input
+                    type="text"
+                    placeholder={newPkgType === 'MSI' ? '/qn /norestart' : '/S'}
+                    value={newPkgSilentArgs}
+                    onChange={(e) => setNewPkgSilentArgs(e.target.value)}
+                    className="w-full h-10 px-3 bg-slate-50 border border-slate-300 rounded-lg text-xs font-mono font-bold text-slate-900 focus:outline-none focus:border-primary"
+                  />
+                  <p className="text-[10px] text-slate-500">e.g. <code>/S</code> or <code>/silent</code> or <code>/qn /norestart</code></p>
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-slate-800">SHA-256 Hash Checksum (Optional)</label>
+                <input
+                  type="text"
+                  placeholder="Optional 64-character SHA-256 hex string..."
+                  value={newPkgChecksum}
+                  onChange={(e) => setNewPkgChecksum(e.target.value)}
+                  className="w-full h-10 px-3 bg-slate-50 border border-slate-300 rounded-lg text-xs font-mono font-bold text-slate-900 focus:outline-none focus:border-primary"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => setAddPackageModalOpen(false)}
+                  className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl font-bold text-xs transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+
+                <button
+                  type="submit"
+                  disabled={addingPackage}
+                  className="px-5 py-2.5 bg-primary hover:bg-primary-container text-white rounded-xl font-bold text-xs flex items-center gap-2 shadow-md cursor-pointer disabled:opacity-50"
+                >
+                  {addingPackage ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                  <span>Save &amp; Add to Catalog</span>
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

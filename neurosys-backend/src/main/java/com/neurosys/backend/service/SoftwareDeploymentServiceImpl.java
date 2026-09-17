@@ -71,7 +71,7 @@ public class SoftwareDeploymentServiceImpl implements SoftwareDeploymentService 
                 .silentArguments(dto.getSilentArguments())
                 .checksum(dto.getChecksum())
                 .supportedOs(dto.getSupportedOs() != null ? dto.getSupportedOs() : "Windows")
-                .active(dto.isActive())
+                .active(true)
                 .build();
         SoftwarePackage saved = packageRepository.save(pkg);
         return mapPackageToDto(saved);
