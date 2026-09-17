@@ -79,7 +79,8 @@ const LabReadiness = () => {
       const fleetData = fleetRes?.data || fleetRes;
       if (fleetData && Array.isArray(fleetData.softwareList) && fleetData.softwareList.length > 0) {
         rawSwList = fleetData.softwareList;
-        if (Array.isArray(fleetData.computers) && fleetData.computers.length > 0) {
+        // Only fallback to fleet computers if compList was empty
+        if (compList.length === 0 && Array.isArray(fleetData.computers) && fleetData.computers.length > 0) {
           compList = fleetData.computers;
         }
       } else if (Array.isArray(allSwRes)) {
@@ -93,7 +94,18 @@ const LabReadiness = () => {
       if (Array.isArray(rulesRes)) rulesList = rulesRes;
       else if (rulesRes && Array.isArray(rulesRes.data)) rulesList = rulesRes.data;
 
-      setComputers(compList.filter(Boolean));
+      let safeCompList = compList.filter(Boolean);
+
+      // Ensure computers are strictly scoped to currentLab if specified
+      if (currentLab?.id && currentLab.id !== 'ALL') {
+        safeCompList = safeCompList.filter(c => 
+          String(c.labId) === String(currentLab.id) ||
+          c.labName === currentLab.name ||
+          (c.lab && String(c.lab.id) === String(currentLab.id))
+        );
+      }
+
+      setComputers(safeCompList);
       setSoftwareList(rawSwList.filter(Boolean));
       setRequiredRules(rulesList.filter(Boolean));
     } catch (e) {
@@ -243,11 +255,11 @@ const LabReadiness = () => {
     }
 
     // Determine Final Readiness State:
-    // 🟢 READY | 🟡 ATTENTION | 🔴 NOT READY
+    // 🟢 READY | 🔴 NOT READY
     let readinessState = 'READY';
     let compliancePct = 100;
 
-    if (!isOnline || missingCount > 0 || freeDiskPct < 10 || ram > 95 || !hasInventory) {
+    if (!isOnline || missingCount > 0 || freeDiskPct < 10 || ram > 95 || !hasInventory || outdatedCount > 0 || freeDiskPct <= 20) {
       readinessState = 'NOT_READY';
       if (requiredRules.length > 0) {
         const metCount = requiredRules.length - missingCount - outdatedCount;
@@ -255,9 +267,6 @@ const LabReadiness = () => {
       } else {
         compliancePct = isOnline ? 75 : 0;
       }
-    } else if (outdatedCount > 0 || freeDiskPct <= 20 || ram > 80 || cpu > 80) {
-      readinessState = 'ATTENTION';
-      compliancePct = 85;
     }
 
     // Recommendation
@@ -298,7 +307,6 @@ const LabReadiness = () => {
   // Calculate Summary Counts
   const totalLabComputers = evaluatedComputers.length;
   const readyComputers = evaluatedComputers.filter(c => c.readinessState === 'READY').length;
-  const attentionComputers = evaluatedComputers.filter(c => c.readinessState === 'ATTENTION').length;
   const unreadyComputers = evaluatedComputers.filter(c => c.readinessState === 'NOT_READY').length;
 
   // Safe Overall Readiness Score % (Fix 0/0 = 100% bug)
@@ -360,7 +368,7 @@ const LabReadiness = () => {
         <div className="flex flex-col md:flex-row items-center justify-between gap-6">
           <div className="space-y-3 text-center md:text-left">
             <span className="font-label-md text-label-md bg-primary-container/20 text-primary px-3 py-1 rounded-full font-bold uppercase border border-primary/30">
-              Scope: Computer Lab
+              Scope: {currentLab?.name || 'Computer Lab'}
             </span>
             <h2 className="font-display text-display font-extrabold text-slate-900">
               {totalLabComputers === 0 
@@ -369,8 +377,8 @@ const LabReadiness = () => {
             </h2>
             <p className="font-body-md text-body-md text-slate-700 font-medium max-w-xl">
               {totalLabComputers === 0
-                ? 'No registered computers are assigned to the computer lab yet. Connect a NeuroSys Agent to begin checking.'
-                : `${readyComputers} out of ${totalLabComputers} Computer(s) Ready • ${attentionComputers + unreadyComputers} Computer(s) Need Attention`}
+                ? 'No registered computers are assigned to this computer lab yet. Connect a NeuroSys Agent to begin checking.'
+                : `${readyComputers} out of ${totalLabComputers} Computer(s) Ready • ${unreadyComputers} Computer(s) Not Ready`}
             </p>
           </div>
 
@@ -385,19 +393,14 @@ const LabReadiness = () => {
           </div>
         </div>
 
-        {/* Readiness Breakdown Tiles */}
-        <div className="grid grid-cols-3 gap-3 mt-6 pt-4 border-t border-slate-200 text-center">
-          <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg">
+        {/* Readiness Breakdown Tiles (Ready / Not Ready) */}
+        <div className="grid grid-cols-2 gap-4 mt-6 pt-4 border-t border-slate-200 text-center">
+          <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-lg">
             <div className="text-headline-md font-extrabold text-emerald-700">🟢 Ready ({readyComputers})</div>
             <div className="text-xs font-bold text-emerald-800 mt-0.5">Compliant &amp; Operational</div>
           </div>
 
-          <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
-            <div className="text-headline-md font-extrabold text-amber-700">🟡 Attention ({attentionComputers})</div>
-            <div className="text-xs font-bold text-amber-800 mt-0.5">Non-Critical Warning</div>
-          </div>
-
-          <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+          <div className="p-3.5 bg-red-50 border border-red-200 rounded-lg">
             <div className="text-headline-md font-extrabold text-red-700">🔴 Not Ready ({unreadyComputers})</div>
             <div className="text-xs font-bold text-red-800 mt-0.5">Missing Requirement / Offline</div>
           </div>
@@ -433,7 +436,7 @@ const LabReadiness = () => {
                     <div>
                       <h4 className="font-body-md text-body-md font-bold text-slate-900">{rule.softwareName}</h4>
                       <p className="font-body-md text-body-md text-slate-700 mt-0.5 font-medium">
-                        Required Version: <strong className="text-primary font-bold">{rule.requiredVersion || 'Optional'}</strong> • Applied to Computer Lab
+                        Required Version: <strong className="text-primary font-bold">{rule.requiredVersion || 'Optional'}</strong> • Applied to {currentLab?.name || 'Computer Lab'}
                       </p>
                     </div>
                   </div>
@@ -449,7 +452,7 @@ const LabReadiness = () => {
               ))
             ) : (
               <div className="p-6 border border-dashed border-slate-200 rounded-xl text-center text-slate-700 text-body-md font-semibold bg-slate-50 space-y-2">
-                <div>No software requirements configured for Computer Lab.</div>
+                <div>No software requirements configured for {currentLab?.name || 'Computer Lab'}.</div>
                 <button
                   onClick={() => setShowAddModal(true)}
                   className="px-3 py-1 bg-primary text-white rounded text-xs font-bold cursor-pointer"
@@ -471,7 +474,7 @@ const LabReadiness = () => {
           <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-2 text-xs font-semibold text-slate-800">
             <div className="flex justify-between py-1 border-b border-slate-200">
               <span>Scope:</span>
-              <span className="font-bold text-slate-900">Computer Lab</span>
+              <span className="font-bold text-slate-900">{currentLab?.name || 'Computer Lab'}</span>
             </div>
             <div className="flex justify-between py-1 border-b border-slate-200">
               <span>Total Computers:</span>
@@ -480,10 +483,6 @@ const LabReadiness = () => {
             <div className="flex justify-between py-1 border-b border-slate-200">
               <span>Ready for Practicals:</span>
               <span className="font-bold text-emerald-700">{readyComputers}</span>
-            </div>
-            <div className="flex justify-between py-1 border-b border-slate-200">
-              <span>Attention Needed:</span>
-              <span className="font-bold text-amber-700">{attentionComputers}</span>
             </div>
             <div className="flex justify-between py-1">
               <span>Not Ready:</span>
@@ -499,7 +498,7 @@ const LabReadiness = () => {
               <p>All {totalLabComputers} computer(s) are 100% ready for practical sessions and examinations.</p>
             ) : (
               <p>
-                {readyComputers} of {totalLabComputers} computer(s) are ready for practical sessions. {attentionComputers > 0 ? `${attentionComputers} computer(s) need attention and ` : ''}{unreadyComputers > 0 ? `${unreadyComputers} computer(s) are not ready.` : ''}
+                {readyComputers} of {totalLabComputers} computer(s) are ready for practical sessions. {unreadyComputers > 0 ? `${unreadyComputers} computer(s) are not ready.` : ''}
               </p>
             )}
           </div>
@@ -547,11 +546,9 @@ const LabReadiness = () => {
                         <span className={`font-label-md text-label-md px-2.5 py-0.5 rounded-full font-bold uppercase ${
                           c.readinessState === 'READY' 
                             ? 'bg-emerald-500/20 text-emerald-700 border border-emerald-500/30' 
-                            : c.readinessState === 'ATTENTION' 
-                            ? 'bg-amber-500/20 text-amber-700 border border-amber-500/30' 
                             : 'bg-red-500/20 text-red-700 border border-red-500/30'
                         }`}>
-                          {c.readinessState === 'READY' ? '🟢 READY' : c.readinessState === 'ATTENTION' ? '🟡 ATTENTION' : '🔴 NOT READY'}
+                          {c.readinessState === 'READY' ? '🟢 READY' : '🔴 NOT READY'}
                         </span>
                       </td>
                       <td className="p-3 font-mono-sm text-mono-sm font-bold text-primary">
@@ -616,10 +613,9 @@ const LabReadiness = () => {
             <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 flex justify-between items-center text-xs font-bold">
               <span className="text-slate-700">Overall Readiness Status:</span>
               <span className={`px-3 py-1 rounded-full uppercase ${
-                selectedCompDetail.readinessState === 'READY' ? 'bg-emerald-500/20 text-emerald-700 border border-emerald-500/30' :
-                selectedCompDetail.readinessState === 'ATTENTION' ? 'bg-amber-500/20 text-amber-700 border border-amber-500/30' : 'bg-red-500/20 text-red-700 border border-red-500/30'
+                selectedCompDetail.readinessState === 'READY' ? 'bg-emerald-500/20 text-emerald-700 border border-emerald-500/30' : 'bg-red-500/20 text-red-700 border border-red-500/30'
               }`}>
-                {selectedCompDetail.readinessState === 'READY' ? '🟢 READY FOR PRACTICAL' : selectedCompDetail.readinessState === 'ATTENTION' ? '🟡 ATTENTION REQUIRED' : '🔴 NOT READY'}
+                {selectedCompDetail.readinessState === 'READY' ? '🟢 READY FOR PRACTICAL' : '🔴 NOT READY'}
               </span>
             </div>
 
