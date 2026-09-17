@@ -28,6 +28,7 @@ public class DiagnosisEngineServiceImpl implements DiagnosisEngineService {
     private final DiagnosticEventRepository diagnosticEventRepository;
     private final DiagnosticIncidentRepository diagnosticIncidentRepository;
     private final CrashPredictionService crashPredictionService;
+    private final LogHumanizerService logHumanizerService;
     private final ObjectMapper objectMapper;
 
     @Override
@@ -218,6 +219,19 @@ public class DiagnosisEngineServiceImpl implements DiagnosisEngineService {
                     .build();
 
             diagnosticEventRepository.save(event);
+
+            // Also ingest into SystemLog table for humanized Windows log viewer
+            try {
+                logHumanizerService.ingestAndHumanizeLog(
+                        computer.getId(),
+                        dto.getEventId(),
+                        dto.getEventSource(),
+                        dto.getCategory(),
+                        dto.getMessage()
+                );
+            } catch (Exception e) {
+                log.debug("Error ingesting log into LogHumanizerService: {}", e.getMessage());
+            }
         }
 
         processMetricsForIncidents(computer.getId());

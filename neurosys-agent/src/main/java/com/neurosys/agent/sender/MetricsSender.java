@@ -241,6 +241,33 @@ public class MetricsSender {
         }
     }
 
+    public void sendFileAnalysisPayload(String agentId, Map<String, Object> storageReport) {
+        if (storageReport == null || storageReport.isEmpty()) return;
+        try {
+            Map<String, Object> payload = new HashMap<>(storageReport);
+            payload.put("agentId", agentId);
+
+            String jsonBody = objectMapper.writeValueAsString(payload);
+            HttpRequest.Builder builder = HttpRequest.newBuilder()
+                    .uri(URI.create(AgentConfig.getServerUrl() + "/agent/file-analyzer"))
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString(jsonBody));
+
+            if (agentAuthToken != null) {
+                builder.header("X-Agent-Token", agentAuthToken);
+            }
+
+            HttpResponse<String> response = httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() == 200) {
+                log.info("Successfully synced file storage analysis report with server.");
+            } else {
+                log.warn("Server returned HTTP status {} when syncing file analysis report.", response.statusCode());
+            }
+        } catch (Exception e) {
+            log.debug("Failed to sync file analysis report: {}", e.getMessage());
+        }
+    }
+
     private void flushOfflineCache() {
         List<File> cachedFiles = cacheManager.getCachedFiles();
         if (!cachedFiles.isEmpty()) {

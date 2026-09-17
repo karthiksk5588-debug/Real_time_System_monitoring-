@@ -18,43 +18,62 @@ public class WindowsLogCollector {
     public List<Map<String, Object>> collectRecentWindowsEvents() {
         List<Map<String, Object>> events = new ArrayList<>();
         try {
-            // Query System log for recent Error/Critical events
-            Process process = Runtime.getRuntime().exec("powershell -NoProfile -ExecutionPolicy Bypass -Command \"Get-WinEvent -FilterHashtable @{LogName='System'; Level=1,2} -MaxEvents 5 -ErrorAction SilentlyContinue | Select-Object Id, ProviderName, Message, TimeCreated | ConvertTo-Json\"");
+            // Query actual recent Windows System events via native wevtutil tool
+            Process process = Runtime.getRuntime().exec("cmd.exe /c wevtutil qe System /c:5 /rd:true /f:text");
             BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()));
-            StringBuilder sb = new StringBuilder();
+
             String line;
+            Map<String, Object> currentEvent = null;
+            StringBuilder msgBuilder = new StringBuilder();
+
             while ((line = reader.readLine()) != null) {
-                sb.append(line);
+                String trimmed = line.trim();
+                if (trimmed.startsWith("Event[")) {
+                    if (currentEvent != null) {
+                        if (msgBuilder.length() > 0) {
+                            currentEvent.put("message", msgBuilder.toString().trim());
+                        }
+                        events.add(currentEvent);
+                    }
+                    currentEvent = new HashMap<>();
+                    currentEvent.put("eventSource", "Windows System Log");
+                    currentEvent.put("occurredAt", Instant.now().toString());
+                    msgBuilder = new StringBuilder();
+                } else if (currentEvent != null) {
+                    if (trimmed.startsWith("Event ID:")) {
+                        try {
+                            int id = Integer.parseInt(trimmed.replace("Event ID:", "").trim());
+                            currentEvent.put("eventId", id);
+                        } catch (Exception e) {
+                            currentEvent.put("eventId", 100);
+                        }
+                    } else if (trimmed.startsWith("Source:") || trimmed.startsWith("Provider Name:")) {
+                        String src = trimmed.replace("Source:", "").replace("Provider Name:", "").trim();
+                        if (!src.isEmpty()) {
+                            currentEvent.put("eventSource", src);
+                        }
+                    } else if (trimmed.startsWith("Level:")) {
+                        currentEvent.put("category", trimmed.replace("Level:", "").trim());
+                    } else if (trimmed.startsWith("Date:")) {
+                        currentEvent.put("occurredAt", Instant.now().toString());
+                    } else if (trimmed.startsWith("Description:")) {
+                        msgBuilder.append(trimmed.replace("Description:", "").trim()).append(" ");
+                    } else if (!trimmed.isEmpty() && !trimmed.contains(":") && msgBuilder.length() > 0) {
+                        msgBuilder.append(trimmed).append(" ");
+                    }
+                }
             }
 
-            String jsonOutput = sb.toString().trim();
-            if (jsonOutput.contains("Id")) {
-                // Event captured via PowerShell
-                Map<String, Object> eventMap = new HashMap<>();
-                eventMap.put("eventSource", "Windows System Log");
-                eventMap.put("eventId", 4101);
-                eventMap.put("category", "GRAPHICS");
-                eventMap.put("message", "Display driver nvlddmkm stopped responding and has successfully recovered.");
-                eventMap.put("occurredAt", Instant.now().toString());
-                events.add(eventMap);
-            } else {
-                // Fallback structured system diagnostic check
-                events.add(createEvent("Display Driver", 4101, "GRAPHICS", "Display driver stopped responding and has recovered."));
+            if (currentEvent != null) {
+                if (msgBuilder.length() > 0) {
+                    currentEvent.put("message", msgBuilder.toString().trim());
+                }
+                events.add(currentEvent);
             }
         } catch (Exception e) {
-            log.debug("Using structured system diagnostic event collector: {}", e.getMessage());
-            events.add(createEvent("Display Driver", 4101, "GRAPHICS", "Display driver stopped responding and has recovered."));
+            log.debug("Windows Event log collector error: {}", e.getMessage());
         }
-        return events;
-    }
 
-    private Map<String, Object> createEvent(String source, int eventId, String category, String msg) {
-        Map<String, Object> map = new HashMap<>();
-        map.put("eventSource", source);
-        map.put("eventId", eventId);
-        map.put("category", category);
-        map.put("message", msg);
-        map.put("occurredAt", Instant.now().toString());
-        return map;
+        return events;
     }
 }

@@ -71,6 +71,12 @@ public class LogHumanizerServiceImpl implements LogHumanizerService {
         try {
             return LogLevel.valueOf(level);
         } catch (Exception e) {
+            String u = level.trim().toUpperCase();
+            if (u.contains("CRIT") || u.contains("ERR") || u.equals("1") || u.equals("2")) {
+                return LogLevel.Critical;
+            } else if (u.contains("WARN") || u.equals("3")) {
+                return LogLevel.Warning;
+            }
             return LogLevel.Information;
         }
     }

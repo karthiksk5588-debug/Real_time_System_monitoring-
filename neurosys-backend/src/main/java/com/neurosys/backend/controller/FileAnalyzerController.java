@@ -23,4 +23,11 @@ public class FileAnalyzerController {
         FileAnalysisReportDto report = fileAnalyzerService.scanComputerFiles(computerId);
         return ResponseEntity.ok(ApiResponse.success("File analysis report generated successfully", report));
     }
+
+    @PostMapping({"/api/v1/agent/file-analyzer", "/agent/file-analyzer"})
+    @Operation(summary = "Receive File Storage Analysis Report from Agent", description = "Ingests live storage scan metrics (temp junk, duplicate files, large files)")
+    public ResponseEntity<ApiResponse<String>> ingestFileAnalysis(@RequestBody java.util.Map<String, Object> payload) {
+        fileAnalyzerService.recordAgentFileAnalysis(payload);
+        return ResponseEntity.ok(ApiResponse.success("File analysis report recorded successfully", "PROCESSED"));
+    }
 }

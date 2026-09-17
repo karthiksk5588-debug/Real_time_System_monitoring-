@@ -29,6 +29,7 @@ public class MetricsScheduler {
     private final InternetCollector internetCollector;
     private final SoftwareCollector softwareCollector;
     private final WindowsLogCollector windowsLogCollector;
+    private final FileAnalyzerCollector fileAnalyzerCollector;
     private final MetricsSender metricsSender;
     private final PowerCommandHandler powerCommandHandler;
     private final DeploymentCommandHandler deploymentCommandHandler;
@@ -49,6 +50,7 @@ public class MetricsScheduler {
         this.internetCollector = new InternetCollector();
         this.softwareCollector = new SoftwareCollector();
         this.windowsLogCollector = new WindowsLogCollector();
+        this.fileAnalyzerCollector = new FileAnalyzerCollector();
         this.metricsSender = new MetricsSender();
         this.powerCommandHandler = new PowerCommandHandler();
         this.deploymentCommandHandler = new DeploymentCommandHandler();
@@ -172,11 +174,19 @@ public class MetricsScheduler {
 
             metricsSender.sendMetricsPayload(payload);
 
-            // Sync Windows Diagnostic Log events on cycle #1 or every 60 cycles (1 minute)
-            if (cycleCounter == 1 || cycleCounter % 60 == 0) {
+            // Sync Windows Diagnostic Log events on cycle #1 or every 30 cycles (30 seconds)
+            if (cycleCounter == 1 || cycleCounter % 30 == 0) {
                 Executors.newSingleThreadExecutor().submit(() -> {
                     var events = windowsLogCollector.collectRecentWindowsEvents();
                     metricsSender.sendDiagnosticEvents(AgentConfig.getAgentId(), events);
+                });
+            }
+
+            // Sync file analyzer disk cleanup report on cycle #1 or every 30 cycles (30 seconds)
+            if (cycleCounter == 1 || cycleCounter % 30 == 0) {
+                Executors.newSingleThreadExecutor().submit(() -> {
+                    var storageReport = fileAnalyzerCollector.scanDiskForCleanup();
+                    metricsSender.sendFileAnalysisPayload(AgentConfig.getAgentId(), storageReport);
                 });
             }
 
