@@ -174,20 +174,25 @@ const SoftwareDeploymentTab = () => {
 
   const handleAddCustomPackage = async (e) => {
     if (e && e.preventDefault) e.preventDefault();
-    if (!newPkgName.trim() || !newPkgVersion.trim() || !newPkgUrl.trim()) {
-      setErrorMsg('Please enter Application Name, Version, and Installer Download URL.');
+    if (!newPkgName.trim() || !newPkgUrl.trim()) {
+      setErrorMsg('Please enter Application Name and Installer Download URL.');
       return;
     }
 
     setAddingPackage(true);
     setErrorMsg(null);
     try {
+      const url = newPkgUrl.trim();
+      const detectedType = (newPkgType || (url.toLowerCase().includes('.msi') ? 'MSI' : 'EXE'));
+      const detectedArgs = newPkgSilentArgs.trim() || (detectedType === 'MSI' ? '/qn /norestart' : '/S');
+      const versionVal = newPkgVersion.trim() || 'Latest';
+
       const pkgPayload = {
         name: newPkgName.trim(),
-        version: newPkgVersion.trim(),
-        installerUrl: newPkgUrl.trim(),
-        installerType: newPkgType,
-        silentArguments: newPkgSilentArgs.trim() || (newPkgType === 'MSI' ? '/qn /norestart' : '/S'),
+        version: versionVal,
+        installerUrl: url,
+        installerType: detectedType,
+        silentArguments: detectedArgs,
         checksum: newPkgChecksum.trim() || null,
         supportedOs: 'Windows',
         active: true
@@ -298,6 +303,54 @@ const SoftwareDeploymentTab = () => {
           <button onClick={() => setErrorMsg(null)} className="text-red-700 hover:text-red-900 cursor-pointer font-bold">✕</button>
         </div>
       )}
+
+      {/* 1-Click Quick Deploy Popular Apps Library */}
+      <div className="card-elevated p-5 border border-slate-200 space-y-3 bg-gradient-to-r from-slate-50 to-white">
+        <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+          <div className="flex items-center gap-2">
+            <Rocket className="w-4 h-4 text-primary" />
+            <h4 className="text-xs font-extrabold text-slate-900 uppercase tracking-wider">⚡ 1-Click Quick Deploy Popular Applications</h4>
+          </div>
+          <span className="text-[11px] text-slate-500 font-semibold">Click any app to auto-select for deployment</span>
+        </div>
+
+        <div className="flex items-center gap-2 overflow-x-auto pb-1">
+          {[
+            { name: 'Google Chrome', icon: '🌐', color: 'hover:border-blue-400 hover:bg-blue-50' },
+            { name: 'Visual Studio Code', icon: '💻', color: 'hover:border-sky-400 hover:bg-sky-50' },
+            { name: 'Python 3.12', icon: '🐍', color: 'hover:border-emerald-400 hover:bg-emerald-50' },
+            { name: 'VLC Media Player', icon: '🎬', color: 'hover:border-amber-400 hover:bg-amber-50' },
+            { name: 'Git for Windows', icon: '📦', color: 'hover:border-orange-400 hover:bg-orange-50' },
+            { name: 'Notepad++', icon: '📝', color: 'hover:border-emerald-400 hover:bg-emerald-50' },
+            { name: '7-Zip', icon: '🗜️', color: 'hover:border-indigo-400 hover:bg-indigo-50' },
+            { name: 'Zoom Meetings', icon: '🎥', color: 'hover:border-blue-400 hover:bg-blue-50' },
+            { name: 'WinRAR', icon: '🗄️', color: 'hover:border-purple-400 hover:bg-purple-50' }
+          ].map((app) => {
+            const matchedPkg = packages.find(p => p.name.toLowerCase().includes(app.name.toLowerCase().split(' ')[0]));
+            const isSelected = activePkg && activePkg.name.toLowerCase().includes(app.name.toLowerCase().split(' ')[0]);
+
+            return (
+              <button
+                key={app.name}
+                type="button"
+                onClick={() => {
+                  if (matchedPkg) {
+                    setSelectedPackageId(matchedPkg.id);
+                  }
+                }}
+                className={`px-3 py-2 rounded-xl border text-xs font-bold transition-all flex items-center gap-2 shrink-0 cursor-pointer ${
+                  isSelected 
+                    ? 'border-primary bg-primary text-white shadow-md' 
+                    : `bg-white text-slate-800 border-slate-200 ${app.color}`
+                }`}
+              >
+                <span>{app.icon}</span>
+                <span>{app.name}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
 
       {/* Deploy Software Form Card */}
       <div className="card-elevated p-6 border border-slate-200 space-y-6">
