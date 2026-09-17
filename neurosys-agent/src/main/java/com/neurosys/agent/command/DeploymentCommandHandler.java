@@ -139,13 +139,26 @@ public class DeploymentCommandHandler {
             log.info("Executing silent installation for {}", packageName);
 
             ProcessBuilder pb;
+            List<String> command = new ArrayList<>();
             if ("MSI".equalsIgnoreCase(installerType)) {
-                String args = (silentArguments != null && !silentArguments.isBlank()) ? silentArguments : "/qn /norestart";
-                pb = new ProcessBuilder("msiexec.exe", "/i", tempInstaller.getAbsolutePath(), args);
+                command.add("msiexec.exe");
+                command.add("/i");
+                command.add(tempInstaller.getAbsolutePath());
+                if (silentArguments != null && !silentArguments.isBlank()) {
+                    command.addAll(Arrays.asList(silentArguments.trim().split("\\s+")));
+                } else {
+                    command.add("/qn");
+                    command.add("/norestart");
+                }
             } else {
-                String args = (silentArguments != null && !silentArguments.isBlank()) ? silentArguments : "/S";
-                pb = new ProcessBuilder("cmd.exe", "/c", "start", "/wait", "", tempInstaller.getAbsolutePath(), args);
+                command.add(tempInstaller.getAbsolutePath());
+                if (silentArguments != null && !silentArguments.isBlank()) {
+                    command.addAll(Arrays.asList(silentArguments.trim().split("\\s+")));
+                } else {
+                    command.add("/S");
+                }
             }
+            pb = new ProcessBuilder(command);
 
             pb.redirectErrorStream(true);
             Process process = pb.start();

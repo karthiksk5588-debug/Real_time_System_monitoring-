@@ -242,8 +242,11 @@ public class SoftwareDeploymentServiceImpl implements SoftwareDeploymentService 
     @Override
     @Transactional
     public DeploymentTargetDto updateTargetStatus(String deploymentId, String agentId, DeploymentStatusUpdateRequest request) {
-        SoftwareDeploymentTarget target = targetRepository.findByDeploymentIdAndComputerAgentId(deploymentId, agentId)
-                .orElseThrow(() -> new ResourceNotFoundException("SoftwareDeploymentTarget", "deploymentId/agentId", deploymentId + "/" + agentId));
+        List<SoftwareDeploymentTarget> targets = targetRepository.findByDeploymentIdAndAgentOrHostnameOrId(deploymentId, agentId);
+        if (targets.isEmpty()) {
+            throw new ResourceNotFoundException("SoftwareDeploymentTarget", "deploymentId/agentId", deploymentId + "/" + agentId);
+        }
+        SoftwareDeploymentTarget target = targets.get(0);
 
         DeploymentTargetStatus newStatus = request.getStatus();
         target.setStatus(newStatus);
