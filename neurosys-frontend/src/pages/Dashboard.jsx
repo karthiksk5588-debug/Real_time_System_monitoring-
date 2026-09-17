@@ -23,7 +23,6 @@ const Dashboard = () => {
   const { currentLab } = useLab();
   const [computers, setComputers] = useState([]);
   const [alerts, setAlerts] = useState([]);
-  const [aiPredictions, setAiPredictions] = useState([]);
   const [readinessData, setReadinessData] = useState(null);
   const [lastUpdated, setLastUpdated] = useState('Just now');
   const [loading, setLoading] = useState(true);
@@ -83,16 +82,6 @@ const Dashboard = () => {
 
       if (Array.isArray(compList)) {
         setComputers(compList);
-
-        // Fetch real AI crash predictions for connected endpoints
-        if (compList.length > 0) {
-          const predPromises = compList.slice(0, 3).map(c => 
-            metricsService.getCrashPrediction(c.id).catch(() => null)
-          );
-          const predResults = await Promise.all(predPromises);
-          const validPreds = predResults.map(r => r?.data || r).filter(Boolean);
-          setAiPredictions(validPreds);
-        }
       }
 
       setAlerts(Array.isArray(alertList) ? alertList : []);
@@ -290,43 +279,6 @@ const Dashboard = () => {
                   )}
                 </tbody>
               </table>
-            </div>
-          </section>
-
-          {/* AI Predictive Insights */}
-          <section className="relative overflow-hidden rounded-xl bg-slate-900 text-white border border-slate-800 p-6 shadow-md">
-            <h3 
-              onClick={() => navigate('/analytics')}
-              className="text-headline-md font-headline-md text-cyan-400 mb-4 flex items-center gap-2 font-bold cursor-pointer hover:underline"
-            >
-              <Brain className="w-6 h-6 text-cyan-400" />
-              Computer Lab AI Predictive Insights
-            </h3>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {aiPredictions.length > 0 ? (
-                aiPredictions.map((pred, idx) => (
-                  <div 
-                    key={idx}
-                    onClick={() => navigate('/analytics')}
-                    className="bg-slate-800/90 border border-slate-700 rounded-lg p-4 flex items-start gap-3 hover:border-cyan-400 transition-colors cursor-pointer"
-                  >
-                    <Activity className="w-5 h-5 text-amber-400 mt-0.5 font-bold shrink-0" />
-                    <div>
-                      <h4 className="text-body-md font-body-md font-bold text-slate-100">{pred.predictedIssue || 'Resource Risk Analysis'}</h4>
-                      <p className="text-body-md font-body-md text-slate-300 mt-1 font-medium">
-                        {pred.reasons?.[0] || pred.contributingFactors?.[0] || `Estimated timeframe: ${pred.estimatedTimeframe || '~60 days'}`}
-                      </p>
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <div className="col-span-2 p-6 bg-slate-800/60 rounded-lg border border-slate-700 text-center text-slate-300 text-sm">
-                  <Brain className="w-8 h-8 text-cyan-400 mx-auto mb-1" />
-                  <p className="font-bold text-slate-100">Linear Regression Failure Risk Engine Active</p>
-                  <p className="text-xs mt-1 text-slate-400">Continuously monitoring telemetry streams from connected lab computers.</p>
-                </div>
-              )}
             </div>
           </section>
         </div>
