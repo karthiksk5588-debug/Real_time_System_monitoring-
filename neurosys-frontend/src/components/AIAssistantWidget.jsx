@@ -65,26 +65,26 @@ const AIAssistantWidget = () => {
   };
 
   return (
-    <div className="fixed bottom-6 right-6 z-50">
+    <div className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-50">
       {!isOpen ? (
         <button
           onClick={() => setIsOpen(true)}
-          className="flex items-center space-x-2.5 px-4 py-3 rounded-full bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-semibold text-xs shadow-xl shadow-cyan-500/25 hover:scale-105 transition-all duration-300"
+          className="flex items-center space-x-2 px-3.5 py-2.5 sm:px-4 sm:py-3 rounded-full bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-semibold text-xs shadow-xl shadow-cyan-500/25 hover:scale-105 transition-all duration-300"
         >
-          <Bot className="w-5 h-5" />
+          <Bot className="w-4 h-4 sm:w-5 sm:h-5" />
           <span>AI Assistant</span>
         </button>
       ) : (
-        <div className="w-96 glass-panel rounded-2xl border border-slate-700 shadow-2xl overflow-hidden flex flex-col h-[520px] transition-all duration-300">
+        <div className="w-[calc(100vw-2rem)] sm:w-96 max-w-sm glass-panel rounded-2xl border border-slate-700 shadow-2xl overflow-hidden flex flex-col h-[480px] sm:h-[520px] transition-all duration-300">
           {/* Header */}
-          <div className="p-4 bg-gradient-to-r from-slate-900 to-slate-800 border-b border-slate-700 flex items-center justify-between">
+          <div className="p-3.5 sm:p-4 bg-gradient-to-r from-slate-900 to-slate-800 border-b border-slate-700 flex items-center justify-between">
             <div className="flex items-center space-x-2.5">
-              <div className="p-2 rounded-lg bg-cyan-500/20 text-cyan-400">
-                <Bot className="w-5 h-5" />
+              <div className="p-1.5 sm:p-2 rounded-lg bg-cyan-500/20 text-cyan-400">
+                <Bot className="w-4 h-4 sm:w-5 sm:h-5" />
               </div>
               <div>
-                <h4 className="text-sm font-bold text-slate-100">NeuroSys AI Assistant</h4>
-                <p className="text-[10px] text-cyan-400 font-medium">Google Gemini Live Telemetry</p>
+                <h4 className="text-xs sm:text-sm font-bold text-slate-100">NeuroSys AI Assistant</h4>
+                <p className="text-[9px] sm:text-[10px] text-cyan-400 font-medium">Google Gemini Live Telemetry</p>
               </div>
             </div>
             <button onClick={() => setIsOpen(false)} className="text-slate-400 hover:text-white p-1 rounded-lg">
@@ -93,11 +93,11 @@ const AIAssistantWidget = () => {
           </div>
 
           {/* Messages */}
-          <div className="flex-1 p-4 overflow-y-auto space-y-3 text-xs">
+          <div className="flex-1 p-3 sm:p-4 overflow-y-auto space-y-3 text-xs">
             {messages.map((m, idx) => (
               <div key={idx} className={`flex flex-col ${m.sender === 'user' ? 'items-end' : 'items-start'}`}>
                 <div
-                  className={`max-w-[85%] p-3 rounded-2xl whitespace-pre-wrap ${
+                  className={`max-w-[88%] p-3 rounded-2xl whitespace-pre-wrap ${
                     m.sender === 'user'
                       ? 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white rounded-br-none'
                       : 'bg-slate-800/90 text-slate-200 border border-slate-700 rounded-bl-none'

@@ -3,7 +3,7 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../services/api';
 
-const Sidebar = () => {
+const Sidebar = ({ mobileNavOpen, setMobileNavOpen }) => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [activeAlertCount, setActiveAlertCount] = useState(0);
@@ -27,6 +27,7 @@ const Sidebar = () => {
   };
 
   const handleLogout = () => {
+    if (setMobileNavOpen) setMobileNavOpen(false);
     logout();
     navigate('/');
   };
@@ -43,19 +44,31 @@ const Sidebar = () => {
     { name: 'Settings', path: '/settings', icon: 'settings' },
   ];
 
-  return (
-    <nav className="bg-surface text-primary font-body-md text-body-md w-sidebar-width h-full border-r border-outline-variant fixed left-0 top-0 flex flex-col z-40 hidden md:flex shadow-sm">
+  const renderNavContent = () => (
+    <div className="flex flex-col h-full">
       {/* Header Profile / Admin Info */}
-      <div className="p-gutter border-b border-outline-variant flex items-center gap-3">
-        <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center overflow-hidden border border-primary/30 shrink-0">
-          <span className="material-symbols-outlined text-primary">person</span>
+      <div className="p-4 border-b border-outline-variant flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center overflow-hidden border border-primary/30 shrink-0">
+            <span className="material-symbols-outlined text-primary">person</span>
+          </div>
+          <div className="flex-1 min-w-0">
+            <h2 className="font-headline-md text-body-lg font-bold text-on-surface truncate">
+              {user?.username || user?.name || 'admin'}
+            </h2>
+            <p className="text-label-md font-label-md text-secondary truncate">Lab Supervisor</p>
+          </div>
         </div>
-        <div className="flex-1 min-w-0">
-          <h2 className="font-headline-md text-body-lg font-bold text-on-surface truncate">
-            {user?.username || user?.name || 'admin'}
-          </h2>
-          <p className="text-label-md font-label-md text-secondary truncate">Lab Supervisor</p>
-        </div>
+
+        {/* Mobile Close Button */}
+        {setMobileNavOpen && (
+          <button
+            onClick={() => setMobileNavOpen(false)}
+            className="md:hidden p-1.5 rounded-lg text-slate-500 hover:bg-slate-200 cursor-pointer"
+          >
+            <span className="material-symbols-outlined text-[20px]">close</span>
+          </button>
+        )}
       </div>
 
       {/* Nav Items */}
@@ -64,6 +77,9 @@ const Sidebar = () => {
           <NavLink
             key={item.name}
             to={item.path}
+            onClick={() => {
+              if (setMobileNavOpen) setMobileNavOpen(false);
+            }}
             className={({ isActive }) =>
               `flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors duration-200 ease-in-out group ${
                 isActive
@@ -101,7 +117,32 @@ const Sidebar = () => {
           <span className="material-symbols-outlined text-[18px]">logout</span>
         </button>
       </div>
-    </nav>
+    </div>
+  );
+
+  return (
+    <>
+      {/* Desktop Fixed Sidebar */}
+      <nav className="bg-surface text-primary font-body-md text-body-md w-sidebar-width h-full border-r border-outline-variant fixed left-0 top-0 hidden md:flex flex-col z-40 shadow-sm">
+        {renderNavContent()}
+      </nav>
+
+      {/* Mobile Drawer Overlay */}
+      {mobileNavOpen && (
+        <div className="md:hidden fixed inset-0 z-50 flex">
+          {/* Backdrop */}
+          <div
+            onClick={() => setMobileNavOpen(false)}
+            className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity"
+          />
+
+          {/* Drawer Sidebar */}
+          <div className="relative w-72 max-w-[80vw] bg-surface h-full shadow-2xl z-50 flex flex-col border-r border-outline-variant animate-fade-in-up">
+            {renderNavContent()}
+          </div>
+        </div>
+      )}
+    </>
   );
 };
 
