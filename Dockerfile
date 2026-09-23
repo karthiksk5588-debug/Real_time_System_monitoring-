@@ -15,11 +15,11 @@ WORKDIR /app
 COPY . .
 # Build agent JAR first
 RUN mvn clean package -DskipTests -f neurosys-agent/pom.xml
-# Copy built frontend dist files into Spring Boot static resources
-COPY --from=frontend-build /app/neurosys-frontend/dist /app/neurosys-backend/src/main/resources/static
 # Copy compiled agent JAR into backend static resources
 RUN mkdir -p /app/neurosys-backend/src/main/resources/static/agent-bin && \
     cp /app/neurosys-agent/target/neurosys-agent-1.0.0-SNAPSHOT-exec.jar /app/neurosys-backend/src/main/resources/static/agent-bin/neurosys-agent-1.0.0-SNAPSHOT-exec.jar
+# Copy built frontend dist files into Spring Boot static resources
+COPY --from=frontend-build /app/neurosys-frontend/dist /app/neurosys-backend/src/main/resources/static
 RUN mvn clean package -DskipTests -f neurosys-backend/pom.xml
 
 # Stage 3: Production Runtime Container
