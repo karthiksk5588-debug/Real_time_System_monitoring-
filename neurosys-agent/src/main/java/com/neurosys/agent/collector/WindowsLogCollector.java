@@ -17,9 +17,20 @@ public class WindowsLogCollector {
 
     public List<Map<String, Object>> collectRecentWindowsEvents() {
         List<Map<String, Object>> events = new ArrayList<>();
+
+        // Collect from both System and Application logs, querying only Warning(3), Error(2), and Critical(1) events
+        events.addAll(queryLogChannel("System"));
+        events.addAll(queryLogChannel("Application"));
+
+        return events;
+    }
+
+    private List<Map<String, Object>> queryLogChannel(String channelName) {
+        List<Map<String, Object>> channelEvents = new ArrayList<>();
         try {
-            // Query actual recent Windows System events via native wevtutil tool
-            Process process = Runtime.getRuntime().exec("cmd.exe /c wevtutil qe System /c:5 /rd:true /f:text");
+            // Query only Level 1 (Critical), Level 2 (Error), and Level 3 (Warning) events via native wevtutil tool
+            String cmd = String.format("cmd.exe /c wevtutil qe %s /c:15 /rd:true /q:\"*[System[(Level=1 or Level=2 or Level=3)]]\" /f:text", channelName);
+            Process process = Runtime.getRuntime().exec(cmd);
             BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()));
 
             String line;
@@ -33,10 +44,12 @@ public class WindowsLogCollector {
                         if (msgBuilder.length() > 0) {
                             currentEvent.put("message", msgBuilder.toString().trim());
                         }
-                        events.add(currentEvent);
+                        if (isValidProblemEvent(currentEvent)) {
+                            channelEvents.add(currentEvent);
+                        }
                     }
                     currentEvent = new HashMap<>();
-                    currentEvent.put("eventSource", "Windows System Log");
+                    currentEvent.put("eventSource", "Windows " + channelName + " Log");
                     currentEvent.put("occurredAt", Instant.now().toString());
                     msgBuilder = new StringBuilder();
                 } else if (currentEvent != null) {
@@ -68,12 +81,29 @@ public class WindowsLogCollector {
                 if (msgBuilder.length() > 0) {
                     currentEvent.put("message", msgBuilder.toString().trim());
                 }
-                events.add(currentEvent);
+                if (isValidProblemEvent(currentEvent)) {
+                    channelEvents.add(currentEvent);
+                }
             }
         } catch (Exception e) {
-            log.debug("Windows Event log collector error: {}", e.getMessage());
+            log.debug("Windows Event log channel {} query error: {}", channelName, e.getMessage());
         }
 
-        return events;
+        return channelEvents;
+    }
+
+    private boolean isValidProblemEvent(Map<String, Object> event) {
+        Integer eventId = (Integer) event.get("eventId");
+        if (eventId == null) return true;
+
+        // Ignore routine informational events that are not true system problems
+        // Event ID 7040: Service configuration changes
+        // Event ID 7036: Routine service start/stop state changes
+        // Event ID 507 / 700 / 701: Routine Modern Standby / Power Manager input suppression events
+        if (eventId == 7040 || eventId == 7036 || eventId == 507 || eventId == 700 || eventId == 701) {
+            return false;
+        }
+
+        return true;
     }
 }
