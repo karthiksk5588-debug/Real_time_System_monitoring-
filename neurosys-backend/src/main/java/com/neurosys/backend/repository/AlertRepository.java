@@ -22,5 +22,7 @@ public interface AlertRepository extends JpaRepository<Alert, String> {
     long countBySeverity(AlertSeverity severity);
     Optional<Alert> findFirstByComputerIdAndTitleAndStatus(String computerId, String title, AlertStatus status);
     Optional<Alert> findFirstByComputerIdAndAlertTypeAndStatusIn(String computerId, AlertType alertType, List<AlertStatus> statuses);
+    Optional<Alert> findFirstByComputerIdAndAlertTypeAndResourceKeyAndStatusIn(String computerId, AlertType alertType, String resourceKey, List<AlertStatus> statuses);
     boolean existsByComputerIdAndAlertTypeAndStatusAndResolvedAtAfter(String computerId, AlertType alertType, AlertStatus status, Instant after);
+    boolean existsByComputerIdAndAlertTypeAndResourceKeyAndStatusAndResolvedAtAfter(String computerId, AlertType alertType, String resourceKey, AlertStatus status, Instant after);
 }

@@ -9,6 +9,7 @@ import java.util.List;
 public interface AlertEngineService {
     List<AlertDto> evaluateAndTriggerAlerts(Computer computer, SystemMetric metric);
     void triggerOfflineAlert(Computer computer);
+    void triggerOfflineAlert(Computer computer, long offlineDurationSeconds);
     void resolveOfflineAlert(Computer computer);
     List<AlertDto> getAllAlerts();
     List<AlertDto> getAlertsByLabId(String labId);

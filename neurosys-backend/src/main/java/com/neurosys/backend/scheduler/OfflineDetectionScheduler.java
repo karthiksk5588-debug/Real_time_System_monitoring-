@@ -1,5 +1,6 @@
 package com.neurosys.backend.scheduler;
 
+import com.neurosys.backend.config.AlertEngineConfig;
 import com.neurosys.backend.entity.Computer;
 import com.neurosys.backend.enums.ComputerStatus;
 import com.neurosys.backend.repository.ComputerRepository;
@@ -12,8 +13,8 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
 import java.time.Instant;
-import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
 
@@ -26,22 +27,21 @@ public class OfflineDetectionScheduler {
     private final AlertEngineService alertEngineService;
     private final HeartbeatTrackerService heartbeatTracker;
     private final WebSocketMetricsPublisher webSocketMetricsPublisher;
+    private final AlertEngineConfig alertConfig;
 
-    @Scheduled(fixedRate = 3000) // Runs every 3 seconds for stable heartbeat evaluation
+    @Scheduled(fixedRate = 5000) // Runs every 5 seconds to evaluate endpoint heartbeat health
     @Transactional
     public void detectOfflineComputers() {
         try {
-            // 10-second tolerance threshold for network delay and smooth UI state
-            Instant threshold = Instant.now().minus(10, ChronoUnit.SECONDS);
+            Instant now = Instant.now();
+            long warningStateSec = alertConfig.getOffline().getWarningStateSeconds();
+            long alertDurationSec = alertConfig.getOffline().getAlertDurationSeconds();
+
             Map<String, Instant> heartbeatMap = heartbeatTracker.getLastHeartbeatMap();
 
-            List<Computer> onlineComputers = computerRepository.findAll().stream()
-                    .filter(c -> c.getStatus() == ComputerStatus.ONLINE 
-                              || c.getStatus() == ComputerStatus.WARNING 
-                              || c.getStatus() == ComputerStatus.CRITICAL)
-                    .toList();
+            List<Computer> computers = computerRepository.findAll();
 
-            for (Computer c : onlineComputers) {
+            for (Computer c : computers) {
                 Instant lastSeen = heartbeatMap.get(c.getId());
                 if (lastSeen == null) {
                     lastSeen = heartbeatMap.get(c.getAgentId());
@@ -50,22 +50,41 @@ public class OfflineDetectionScheduler {
                     lastSeen = c.getLastSeenAt();
                 }
 
-                if (lastSeen == null || lastSeen.isBefore(threshold)) {
-                    ComputerStatus oldStatus = c.getStatus();
-                    log.info("[REAL-TIME DETECT] PC {} ({}) missed heartbeat (>10s). Status changed {} → OFFLINE", 
-                            c.getHostname(), c.getAgentId(), oldStatus);
+                if (lastSeen == null) {
+                    continue;
+                }
 
-                    c.setStatus(ComputerStatus.OFFLINE);
-                    c.setUpdatedAt(Instant.now());
-                    computerRepository.save(c);
+                long offlineDurationSeconds = Math.max(0, Duration.between(lastSeen, now).getSeconds());
 
-                    // Broadcast real-time status change event to all WebSocket & SSE clients
-                    webSocketMetricsPublisher.broadcastStatusChange(c, ComputerStatus.OFFLINE, "Connection lost / Heartbeat stopped (>10s)");
-                    alertEngineService.triggerOfflineAlert(c);
+                if (offlineDurationSeconds >= alertDurationSec) {
+                    // Endpoint has been offline for >= 5 minutes (300s) -> Create/Update ONE active ENDPOINT_OFFLINE incident
+                    if (c.getStatus() != ComputerStatus.OFFLINE) {
+                        ComputerStatus oldStatus = c.getStatus();
+                        log.info("[OFFLINE DETECT] PC {} ({}) missed heartbeat (>{}s). Status {} → OFFLINE",
+                                c.getHostname(), c.getAgentId(), alertDurationSec, oldStatus);
+                        c.setStatus(ComputerStatus.OFFLINE);
+                        c.setUpdatedAt(now);
+                        computerRepository.save(c);
+
+                        webSocketMetricsPublisher.broadcastStatusChange(c, ComputerStatus.OFFLINE,
+                                String.format("Telemetry heartbeat stopped for %d minutes", offlineDurationSeconds / 60));
+                    }
+
+                    alertEngineService.triggerOfflineAlert(c, offlineDurationSeconds);
+                } else if (offlineDurationSeconds >= warningStateSec) {
+                    // Endpoint missed heartbeat for >= 60 seconds -> Mark Warning state
+                    if (c.getStatus() == ComputerStatus.ONLINE) {
+                        c.setStatus(ComputerStatus.WARNING);
+                        c.setUpdatedAt(now);
+                        computerRepository.save(c);
+
+                        webSocketMetricsPublisher.broadcastStatusChange(c, ComputerStatus.WARNING,
+                                "Telemetry heartbeat delayed (>60s)");
+                    }
                 }
             }
         } catch (Exception e) {
-            log.warn("[OFFLINE SCHEDULER] Transient error during offline check (will retry in next cycle): {}", e.getMessage());
+            log.warn("[OFFLINE SCHEDULER] Error during offline check: {}", e.getMessage());
         }
     }
 }

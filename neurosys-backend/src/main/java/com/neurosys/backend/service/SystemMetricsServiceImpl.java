@@ -154,18 +154,13 @@ public class SystemMetricsServiceImpl implements SystemMetricsService {
         double ram = request.getMemoryUsagePercent() != null ? request.getMemoryUsagePercent() : 0.0;
         double disk = request.getDiskUsagePercent() != null ? request.getDiskUsagePercent() : 0.0;
 
-        ComputerStatus newStatus;
-        if (cpu >= 99.0 || disk >= 99.0) {
-            newStatus = ComputerStatus.CRITICAL;
-        } else if (cpu >= 90.0 || ram >= 98.0) {
-            newStatus = ComputerStatus.WARNING;
-        } else {
-            newStatus = ComputerStatus.ONLINE;
-        }
+        ComputerStatus newStatus = (oldStatus == ComputerStatus.OFFLINE || oldStatus == ComputerStatus.PENDING)
+                ? ComputerStatus.ONLINE
+                : oldStatus;
 
         if (oldStatus != newStatus) {
-            log.info("[INFO] PC {} status restored/changed {} → {}", computer.getHostname(), oldStatus, newStatus);
-            webSocketMetricsPublisher.broadcastStatusChange(computer, newStatus, "Telemetry metric ingestion status change");
+            log.info("[INFO] PC {} status restored {} → {}", computer.getHostname(), oldStatus, newStatus);
+            webSocketMetricsPublisher.broadcastStatusChange(computer, newStatus, "Telemetry metric heartbeat restored");
         }
         computer.setStatus(newStatus);
         computer.setLastSeenAt(now);

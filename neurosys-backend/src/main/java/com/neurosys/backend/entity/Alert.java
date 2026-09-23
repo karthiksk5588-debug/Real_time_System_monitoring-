@@ -45,6 +45,9 @@ public class Alert extends BaseEntity {
     @Column(name = "alert_type", nullable = false, length = 50)
     private AlertType alertType;
 
+    @Column(name = "resource_key", length = 100)
+    private String resourceKey;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 50)
     @Builder.Default

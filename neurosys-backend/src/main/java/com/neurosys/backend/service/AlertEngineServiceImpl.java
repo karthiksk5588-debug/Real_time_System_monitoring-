@@ -1,6 +1,7 @@
 package com.neurosys.backend.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.neurosys.backend.config.AlertEngineConfig;
 import com.neurosys.backend.dto.response.AlertDto;
 import com.neurosys.backend.entity.Alert;
 import com.neurosys.backend.entity.Computer;
@@ -20,11 +21,18 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Slf4j
 @Service
@@ -36,14 +44,15 @@ public class AlertEngineServiceImpl implements AlertEngineService {
     private final DiagnosticEventRepository diagnosticEventRepository;
     private final EmailNotificationService emailNotificationService;
     private final ObjectMapper objectMapper;
+    private final AlertEngineConfig alertConfig;
 
     private static final List<AlertStatus> ACTIVE_STATUSES = List.of(AlertStatus.OPEN, AlertStatus.ACKNOWLEDGED);
 
-    private static final int HISTORY_WINDOW_SIZE = 15;
-    private static final double CPU_SUSTAINED_THRESHOLD = 85.0;
-    private static final double RAM_SUSTAINED_THRESHOLD = 88.0;
-    private static final double DISK_WARNING_THRESHOLD = 85.0;
-    private static final double DISK_CRITICAL_THRESHOLD = 92.0;
+    // In-memory sliding window buffer per computer ID (stores up to 600 1-second telemetry samples = 10 minutes)
+    private final Map<String, Deque<SystemMetric>> liveWindowMap = new ConcurrentHashMap<>();
+
+    private static final DateTimeFormatter TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+            .withZone(ZoneId.systemDefault());
 
     @Override
     @Transactional
@@ -54,156 +63,245 @@ public class AlertEngineServiceImpl implements AlertEngineService {
             return triggeredAlerts;
         }
 
-        // Auto-resolve offline alert if computer is streaming metrics
+        // Auto-resolve offline alert if computer is active and sending telemetry
         resolveOfflineAlert(computer);
 
-        // Fetch historical telemetry window (up to 15 latest samples)
-        List<SystemMetric> history = systemMetricRepository.findByComputerIdOrderByRecordedAtDesc(
-                computer.getId(), PageRequest.of(0, HISTORY_WINDOW_SIZE));
-
-        if (history == null || history.size() < 3) {
-            // Insufficient historical telemetry to determine degradation pattern — avoid false alerts on single spikes
-            log.debug("Insufficient telemetry history ({}) for computer {}. Skipping degradation alert evaluation.",
-                    history != null ? history.size() : 0, computer.getHostname());
-            return triggeredAlerts;
+        // Update in-memory sliding telemetry window (keep up to 600 seconds)
+        Deque<SystemMetric> window = liveWindowMap.computeIfAbsent(computer.getId(), k -> new ArrayDeque<>());
+        synchronized (window) {
+            window.addFirst(metric);
+            while (window.size() > 600) {
+                window.removeLast();
+            }
         }
 
-        int totalSamples = history.size();
+        List<SystemMetric> samples;
+        synchronized (window) {
+            samples = new ArrayList<>(window);
+        }
+
+        Instant now = Instant.now();
+        Instant oldestSampleTime = samples.get(samples.size() - 1).getRecordedAt();
+        long totalWindowSeconds = Math.max(1, Duration.between(oldestSampleTime, now).getSeconds());
 
         // ----------------------------------------------------
-        // 1. PERSISTENT CPU DEGRADATION EVALUATION
+        // 1. SUSTAINED CPU DEGRADATION EVALUATION
         // ----------------------------------------------------
-        long highCpuCount = history.stream()
-                .filter(m -> m.getCpuUsagePercent() != null && m.getCpuUsagePercent() >= CPU_SUSTAINED_THRESHOLD)
+        AlertEngineConfig.CpuConfig cpuCfg = alertConfig.getCpu();
+        long cpuWarnSec = cpuCfg.getWarningDurationSeconds();
+        long cpuCritSec = cpuCfg.getCriticalDurationSeconds();
+
+        List<SystemMetric> cpuWarnSamples = samples.stream()
+                .filter(s -> Duration.between(s.getRecordedAt(), now).getSeconds() <= cpuWarnSec)
+                .toList();
+
+        List<SystemMetric> cpuCritSamples = samples.stream()
+                .filter(s -> Duration.between(s.getRecordedAt(), now).getSeconds() <= cpuCritSec)
+                .toList();
+
+        long cpuWarnWindowSeconds = cpuWarnSamples.isEmpty() ? 0 : Duration.between(cpuWarnSamples.get(cpuWarnSamples.size() - 1).getRecordedAt(), now).getSeconds();
+        long cpuCritWindowSeconds = cpuCritSamples.isEmpty() ? 0 : Duration.between(cpuCritSamples.get(cpuCritSamples.size() - 1).getRecordedAt(), now).getSeconds();
+
+        long highCpuWarnCount = cpuWarnSamples.stream()
+                .filter(s -> s.getCpuUsagePercent() != null && s.getCpuUsagePercent() >= cpuCfg.getWarningThreshold())
                 .count();
 
-        long recentLowCpuCount = history.stream().limit(3)
-                .filter(m -> m.getCpuUsagePercent() != null && m.getCpuUsagePercent() < 75.0)
+        long highCpuCritCount = cpuCritSamples.stream()
+                .filter(s -> s.getCpuUsagePercent() != null && s.getCpuUsagePercent() >= cpuCfg.getCriticalThreshold())
                 .count();
 
-        // Requires sustained high CPU in >= 60% of window AND recent samples have NOT recovered to normal
-        boolean isCpuPersistent = totalSamples >= 5 && highCpuCount >= (int) (totalSamples * 0.6) && recentLowCpuCount == 0;
-        boolean isCpuRecovery = recentLowCpuCount >= 2;
+        // Check recent samples for recovery below hysteresis bound
+        long recentLowCpuCount = samples.stream().limit(5)
+                .filter(s -> s.getCpuUsagePercent() != null && s.getCpuUsagePercent() <= cpuCfg.getRecoveryThreshold())
+                .count();
+
+        // Requires sustained load: window spans required duration AND >= 80% of samples exceed threshold AND recent samples haven't recovered
+        boolean isCpuWarning = cpuWarnWindowSeconds >= Math.min(60, cpuWarnSec) &&
+                cpuWarnSamples.size() >= 5 &&
+                highCpuWarnCount >= (long) (cpuWarnSamples.size() * 0.8) &&
+                recentLowCpuCount == 0;
+
+        boolean isCpuCritical = cpuCritWindowSeconds >= Math.min(120, cpuCritSec) &&
+                cpuCritSamples.size() >= 10 &&
+                highCpuCritCount >= (long) (cpuCritSamples.size() * 0.8) &&
+                recentLowCpuCount == 0;
+
+        boolean isCpuRecovery = recentLowCpuCount >= 3;
+
+        AlertSeverity cpuSeverity = isCpuCritical ? AlertSeverity.CRITICAL : AlertSeverity.WARNING;
+        double cpuThreshold = isCpuCritical ? cpuCfg.getCriticalThreshold() : cpuCfg.getWarningThreshold();
+        long targetCpuDuration = isCpuCritical ? cpuCritSec : cpuWarnSec;
+        long currentCpuSustainedMinutes = Math.max(1, cpuWarnWindowSeconds / 60);
 
         List<String> cpuEvidence = List.of(
-                String.format("CPU usage remained above 85%% in %d out of the last %d telemetry samples.", highCpuCount, totalSamples),
                 String.format("Latest recorded CPU load: %.1f%%.", metric.getCpuUsagePercent()),
-                "CPU load has remained unusually high for a sustained period compared with normal baseline usage."
+                String.format("CPU usage sustained above %.0f%% in %d of the last %d telemetry samples (%d minutes).",
+                        cpuThreshold, isCpuCritical ? highCpuCritCount : highCpuWarnCount,
+                        isCpuCritical ? cpuCritSamples.size() : cpuWarnSamples.size(), currentCpuSustainedMinutes),
+                String.format("Persistence criteria: Required >= %.0f%% for %d minutes continuously.", cpuThreshold, targetCpuDuration / 60)
         );
 
         evaluateAlertLifecycle(
                 computer,
-                AlertType.HIGH_CPU,
-                isCpuPersistent,
+                AlertType.CPU_SUSTAINED_HIGH,
+                "CPU",
+                isCpuWarning || isCpuCritical,
                 isCpuRecovery,
-                String.format("%s - Persistent High CPU Usage", computer.getHostname()),
-                String.format("%s has shown unusually high CPU usage for a sustained period compared with its normal usage.", computer.getHostname()),
-                "Check applications using the most CPU and close unnecessary background tasks.",
+                isCpuCritical ? String.format("%s - CRITICAL Sustained CPU Load", computer.getHostname()) : String.format("%s - Sustained High CPU Usage", computer.getHostname()),
+                String.format("Processor on %s has remained continuously under high load (%.1f%%) for %d minutes.",
+                        computer.getHostname(), metric.getCpuUsagePercent(), currentCpuSustainedMinutes),
+                "Check for runaway background processes, virus scanners, or unoptimized worker threads.",
                 cpuEvidence,
-                AlertSeverity.WARNING,
+                cpuSeverity,
                 metric.getCpuUsagePercent(),
-                CPU_SUSTAINED_THRESHOLD,
+                cpuThreshold,
                 triggeredAlerts
         );
 
         // ----------------------------------------------------
-        // 2. PERSISTENT MEMORY (RAM) DEGRADATION EVALUATION
+        // 2. SUSTAINED MEMORY (RAM) PRESSURE EVALUATION
         // ----------------------------------------------------
-        long highRamCount = history.stream()
-                .filter(m -> m.getMemoryUsagePercent() != null && m.getMemoryUsagePercent() >= RAM_SUSTAINED_THRESHOLD)
+        AlertEngineConfig.MemoryConfig ramCfg = alertConfig.getMemory();
+        long ramWarnSec = ramCfg.getWarningDurationSeconds();
+        long ramCritSec = ramCfg.getCriticalDurationSeconds();
+
+        List<SystemMetric> ramWarnSamples = samples.stream()
+                .filter(s -> Duration.between(s.getRecordedAt(), now).getSeconds() <= ramWarnSec)
+                .toList();
+
+        List<SystemMetric> ramCritSamples = samples.stream()
+                .filter(s -> Duration.between(s.getRecordedAt(), now).getSeconds() <= ramCritSec)
+                .toList();
+
+        long ramWarnWindowSeconds = ramWarnSamples.isEmpty() ? 0 : Duration.between(ramWarnSamples.get(ramWarnSamples.size() - 1).getRecordedAt(), now).getSeconds();
+        long ramCritWindowSeconds = ramCritSamples.isEmpty() ? 0 : Duration.between(ramCritSamples.get(ramCritSamples.size() - 1).getRecordedAt(), now).getSeconds();
+
+        long highRamWarnCount = ramWarnSamples.stream()
+                .filter(s -> s.getMemoryUsagePercent() != null && s.getMemoryUsagePercent() >= ramCfg.getWarningThreshold())
                 .count();
 
-        long recentLowRamCount = history.stream().limit(3)
-                .filter(m -> m.getMemoryUsagePercent() != null && m.getMemoryUsagePercent() < 80.0)
+        long highRamCritCount = ramCritSamples.stream()
+                .filter(s -> s.getMemoryUsagePercent() != null && s.getMemoryUsagePercent() >= ramCfg.getCriticalThreshold())
                 .count();
 
-        boolean isRamPersistent = totalSamples >= 5 && highRamCount >= (int) (totalSamples * 0.6) && recentLowRamCount == 0;
-        boolean isRamRecovery = recentLowRamCount >= 2;
+        long recentLowRamCount = samples.stream().limit(5)
+                .filter(s -> s.getMemoryUsagePercent() != null && s.getMemoryUsagePercent() <= ramCfg.getRecoveryThreshold())
+                .count();
+
+        double availableRamMb = metric.getMemoryFreeMb() != null ? metric.getMemoryFreeMb() : 2048.0;
+
+        boolean isRamWarning = ramWarnWindowSeconds >= Math.min(60, ramWarnSec) &&
+                ramWarnSamples.size() >= 5 &&
+                highRamWarnCount >= (long) (ramWarnSamples.size() * 0.8) &&
+                recentLowRamCount == 0;
+
+        boolean isRamCritical = ramCritWindowSeconds >= Math.min(120, ramCritSec) &&
+                ramCritSamples.size() >= 10 &&
+                highRamCritCount >= (long) (ramCritSamples.size() * 0.8) &&
+                availableRamMb <= ramCfg.getCriticalFreeMb() &&
+                recentLowRamCount == 0;
+
+        boolean isRamRecovery = recentLowRamCount >= 3;
+
+        AlertSeverity ramSeverity = isRamCritical ? AlertSeverity.CRITICAL : AlertSeverity.WARNING;
+        double ramThreshold = isRamCritical ? ramCfg.getCriticalThreshold() : ramCfg.getWarningThreshold();
+        long currentRamSustainedMinutes = Math.max(1, ramWarnWindowSeconds / 60);
 
         List<String> ramEvidence = List.of(
-                String.format("RAM allocation remained above 88%% in %d out of the last %d telemetry samples.", highRamCount, totalSamples),
-                String.format("Latest recorded RAM allocation: %.1f%% (%.0f MB free).", metric.getMemoryUsagePercent(), metric.getMemoryFreeMb() != null ? metric.getMemoryFreeMb() : 0.0),
-                "Memory usage has remained continuously high and available RAM has not recovered."
+                String.format("Latest recorded RAM usage: %.1f%% (Available Free: %.0f MB).", metric.getMemoryUsagePercent(), availableRamMb),
+                String.format("Memory allocation sustained above %.0f%% in %d of the last %d telemetry samples (%d minutes).",
+                        ramThreshold, isRamCritical ? highRamCritCount : highRamWarnCount,
+                        isRamCritical ? ramCritSamples.size() : ramWarnSamples.size(), currentRamSustainedMinutes),
+                String.format("Available system RAM remains at %.1f GB.", availableRamMb / 1024.0)
         );
 
         evaluateAlertLifecycle(
                 computer,
-                AlertType.HIGH_RAM,
-                isRamPersistent,
+                AlertType.MEMORY_PRESSURE,
+                "RAM",
+                isRamWarning || isRamCritical,
                 isRamRecovery,
-                String.format("%s - Persistent Memory Pressure", computer.getHostname()),
-                String.format("Memory allocation on %s has remained continuously high for a sustained period.", computer.getHostname()),
-                "Close memory-intensive applications or restart background services.",
+                isRamCritical ? String.format("%s - CRITICAL Memory Pressure", computer.getHostname()) : String.format("%s - Sustained Memory Pressure", computer.getHostname()),
+                String.format("RAM allocation on %s has remained continuously high (%.1f%%, %.0f MB free) for %d minutes.",
+                        computer.getHostname(), metric.getMemoryUsagePercent(), availableRamMb, currentRamSustainedMinutes),
+                "Check for memory leaks or close memory-intensive applications.",
                 ramEvidence,
-                AlertSeverity.WARNING,
+                ramSeverity,
                 metric.getMemoryUsagePercent(),
-                RAM_SUSTAINED_THRESHOLD,
+                ramThreshold,
                 triggeredAlerts
         );
 
         // ----------------------------------------------------
-        // 3. STORAGE DEGRADATION & CONSUMPTION HORIZON PREDICTION
+        // 3. STORAGE CAPACITY EVALUATION
         // ----------------------------------------------------
+        AlertEngineConfig.DiskConfig diskCfg = alertConfig.getDisk();
         double diskPercent = metric.getDiskUsagePercent() != null ? metric.getDiskUsagePercent() : 0.0;
-        double freeDiskGb = metric.getDiskUsedGb() != null && metric.getDiskFreeGb() != null ? metric.getDiskFreeGb() : 100.0;
+        double freeDiskGb = metric.getDiskFreeGb() != null ? metric.getDiskFreeGb() : 100.0;
+        double usedDiskGb = metric.getDiskUsedGb() != null ? metric.getDiskUsedGb() : 0.0;
+        double totalDiskGb = usedDiskGb + freeDiskGb;
 
-        boolean isDiskWarning = diskPercent >= DISK_WARNING_THRESHOLD || freeDiskGb <= 15.0;
-        boolean isDiskCritical = diskPercent >= DISK_CRITICAL_THRESHOLD || freeDiskGb <= 8.0;
-        boolean isDiskRecovery = diskPercent < 80.0 && freeDiskGb > 20.0;
+        boolean isDiskUrgent = diskPercent >= diskCfg.getUrgentThreshold();
+        boolean isDiskCritical = diskPercent >= diskCfg.getCriticalThreshold();
+        boolean isDiskWarning = diskPercent >= diskCfg.getWarningThreshold();
+        boolean isDiskInfo = diskPercent >= diskCfg.getInfoThreshold();
 
-        // Calculate rate of consumption for storage prediction
-        double oldestDiskFreeGb = history.get(history.size() - 1).getDiskFreeGb() != null ? history.get(history.size() - 1).getDiskFreeGb() : freeDiskGb;
-        double diskBurnGb = oldestDiskFreeGb - freeDiskGb;
-        int estimatedDays = diskBurnGb > 0.5 ? Math.max(1, (int)(freeDiskGb / diskBurnGb * 3.0)) : 14;
+        boolean isDiskActive = isDiskInfo || isDiskWarning || isDiskCritical || isDiskUrgent;
+        boolean isDiskRecovery = diskPercent < diskCfg.getRecoveryThreshold();
 
-        String diskMsg = isDiskCritical
-                ? String.format("Storage space is running critically low (%.1f GB remaining). At current consumption rate, storage may run out in ~%d days.", freeDiskGb, estimatedDays)
-                : String.format("Free storage space is running low (%.1f%% used).", diskPercent);
+        AlertSeverity diskSeverity = isDiskUrgent || isDiskCritical ? AlertSeverity.CRITICAL : (isDiskWarning ? AlertSeverity.WARNING : AlertSeverity.INFO);
+        AlertType diskType = (isDiskUrgent || isDiskCritical) ? AlertType.DISK_SPACE_CRITICAL : AlertType.DISK_SPACE_LOW;
 
         List<String> diskEvidence = List.of(
-                String.format("Storage utilization is currently %.1f%%.", diskPercent),
-                String.format("Free storage space remaining: %.1f GB.", freeDiskGb),
-                String.format("Calculated storage exhaustion horizon: ~%d days.", estimatedDays)
+                "Drive: C:",
+                String.format("Total Capacity: %.1f GB", totalDiskGb > 0 ? totalDiskGb : 500.0),
+                String.format("Used Capacity: %.1f GB", usedDiskGb),
+                String.format("Free Capacity: %.1f GB", freeDiskGb),
+                String.format("Percentage Used: %.1f%%", diskPercent)
         );
+
+        String diskMsg = String.format("Drive C: on %s is %.1f%% full. Total: %.1f GB, Used: %.1f GB, Free: %.1f GB.",
+                computer.getHostname(), diskPercent, totalDiskGb > 0 ? totalDiskGb : 500.0, usedDiskGb, freeDiskGb);
 
         evaluateAlertLifecycle(
                 computer,
-                AlertType.HIGH_DISK,
-                isDiskWarning || isDiskCritical,
+                diskType,
+                "Drive C:",
+                isDiskActive,
                 isDiskRecovery,
-                isDiskCritical ? String.format("%s - CRITICAL STORAGE LOW", computer.getHostname()) : String.format("%s - Storage Space Running Low", computer.getHostname()),
+                isDiskCritical ? String.format("%s - Critical Storage Capacity (Drive C:)", computer.getHostname()) : String.format("%s - Storage Space Approaching Capacity (Drive C:)", computer.getHostname()),
                 diskMsg,
-                "Clean up temporary files, clear system caches, and uninstall unused applications.",
+                "Remove unnecessary files, clean system temporary caches, or increase available storage volume.",
                 diskEvidence,
-                isDiskCritical ? AlertSeverity.CRITICAL : AlertSeverity.WARNING,
+                diskSeverity,
                 diskPercent,
-                isDiskCritical ? DISK_CRITICAL_THRESHOLD : DISK_WARNING_THRESHOLD,
+                isDiskCritical ? diskCfg.getCriticalThreshold() : diskCfg.getWarningThreshold(),
                 triggeredAlerts
         );
 
         // ----------------------------------------------------
-        // 4. MULTI-SIGNAL URGENT SYSTEM DEGRADATION EVALUATION
+        // 4. MULTI-SIGNAL HIGH INSTABILITY RISK EVALUATION
         // ----------------------------------------------------
-        Instant sevenDaysAgo = Instant.now().minus(7, ChronoUnit.DAYS);
+        Instant sevenDaysAgo = now.minus(7, ChronoUnit.DAYS);
         List<DiagnosticEvent> recentCrashes = diagnosticEventRepository.findByComputerIdOrderByOccurredAtDesc(
                 computer.getId(), PageRequest.of(0, 10)).stream()
-                .filter(e -> e.getOccurredAt().isAfter(sevenDaysAgo) && 
+                .filter(e -> e.getOccurredAt().isAfter(sevenDaysAgo) &&
                         (e.getCategory() == DiagnosticCategory.GRAPHICS || e.getCategory() == DiagnosticCategory.UNEXPECTED_SHUTDOWN || e.getCategory() == DiagnosticCategory.SYSTEM_CRASH))
                 .toList();
 
-        boolean isHighTemp = metric.getCpuTemperature() != null && metric.getCpuTemperature() >= 82.0;
+        boolean isHighTemp = metric.getCpuTemperature() != null && metric.getCpuTemperature() >= 85.0;
         int activeFailureFactors = 0;
-        if (isCpuPersistent) activeFailureFactors++;
-        if (isRamPersistent) activeFailureFactors++;
+        if (isCpuWarning || isCpuCritical) activeFailureFactors++;
+        if (isRamWarning || isRamCritical) activeFailureFactors++;
         if (isHighTemp) activeFailureFactors++;
         if (!recentCrashes.isEmpty()) activeFailureFactors += recentCrashes.size();
 
-        boolean isUrgentDegradation = activeFailureFactors >= 3;
-        boolean isUrgentResolved = activeFailureFactors < 2;
+        boolean isHighRisk = activeFailureFactors >= 3;
+        boolean isHighRiskRecovery = activeFailureFactors < 2;
 
         List<String> riskEvidence = List.of(
-                String.format("CPU usage sustained above 85%% (%s).", isCpuPersistent ? "YES" : "NO"),
-                String.format("RAM allocation sustained above 88%% (%s).", isRamPersistent ? "YES" : "NO"),
+                String.format("CPU sustained load condition active: %s", (isCpuWarning || isCpuCritical) ? "YES" : "NO"),
+                String.format("RAM memory pressure condition active: %s", (isRamWarning || isRamCritical) ? "YES" : "NO"),
                 String.format("System/application crashes in last 7 days: %d events.", recentCrashes.size()),
                 String.format("Processor thermal workload: %s.", isHighTemp ? String.format("%.1f°C", metric.getCpuTemperature()) : "Normal")
         );
@@ -211,11 +309,12 @@ public class AlertEngineServiceImpl implements AlertEngineService {
         evaluateAlertLifecycle(
                 computer,
                 AlertType.HIGH_RISK,
-                isUrgentDegradation,
-                isUrgentResolved,
+                "INSTABILITY",
+                isHighRisk,
+                isHighRiskRecovery,
                 String.format("%s - URGENT SYSTEM INSTABILITY RISK", computer.getHostname()),
-                String.format("%s is showing multiple signs of performance degradation and repeated system errors. The computer may become unstable.", computer.getHostname()),
-                "Inspect hardware cooling, test RAM memory integrity, and review recorded Windows system logs.",
+                String.format("%s is exhibiting multi-vector degradation (sustained load + system crashes/thermals).", computer.getHostname()),
+                "Inspect cooling hardware, perform memory integrity diagnostics, and review Windows system logs.",
                 riskEvidence,
                 AlertSeverity.CRITICAL,
                 (double) activeFailureFactors,
@@ -229,20 +328,40 @@ public class AlertEngineServiceImpl implements AlertEngineService {
     @Override
     @Transactional
     public void triggerOfflineAlert(Computer computer) {
+        long defaultOfflineSec = alertConfig.getOffline().getAlertDurationSeconds();
+        triggerOfflineAlert(computer, defaultOfflineSec);
+    }
+
+    @Override
+    @Transactional
+    public void triggerOfflineAlert(Computer computer, long offlineDurationSeconds) {
         if (computer == null) return;
+
+        Instant lastSeen = computer.getLastSeenAt() != null ? computer.getLastSeenAt() : Instant.now().minusSeconds(offlineDurationSeconds);
+        String lastSeenStr = TIME_FORMATTER.format(lastSeen);
+        long minutesOffline = Math.max(1, offlineDurationSeconds / 60);
+
+        List<String> evidence = List.of(
+                String.format("Last heartbeat received: %s.", lastSeenStr),
+                "Last known status: ONLINE",
+                String.format("Offline duration: %d minutes (%d seconds).", minutesOffline, offlineDurationSeconds),
+                String.format("Threshold rule: No heartbeat for >= %d minutes.", alertConfig.getOffline().getAlertDurationSeconds() / 60)
+        );
+
         List<AlertDto> dummyList = new ArrayList<>();
         evaluateAlertLifecycle(
                 computer,
-                AlertType.OFFLINE,
+                AlertType.ENDPOINT_OFFLINE,
+                "ENDPOINT",
                 true,
                 false,
-                String.format("%s Endpoint Offline", computer.getHostname()),
-                String.format("%s missed telemetry heartbeat (>60s) and is currently offline.", computer.getHostname()),
-                "Check computer power supply and physical network connection.",
-                List.of("No telemetry heartbeat received for >60 seconds.", "Computer marked OFFLINE in system inventory."),
+                String.format("%s - Endpoint Offline", computer.getHostname()),
+                String.format("%s missed telemetry heartbeat for %d minutes (last seen %s).", computer.getHostname(), minutesOffline, lastSeenStr),
+                "Check computer power supply, physical network cable, or local agent service state.",
+                evidence,
                 AlertSeverity.WARNING,
-                0.0,
-                1.0,
+                (double) offlineDurationSeconds,
+                (double) alertConfig.getOffline().getAlertDurationSeconds(),
                 dummyList
         );
     }
@@ -252,12 +371,31 @@ public class AlertEngineServiceImpl implements AlertEngineService {
     public void resolveOfflineAlert(Computer computer) {
         if (computer == null) return;
         List<AlertDto> dummyList = new ArrayList<>();
+
+        // Resolve both ENDPOINT_OFFLINE and legacy OFFLINE alert types
+        evaluateAlertLifecycle(
+                computer,
+                AlertType.ENDPOINT_OFFLINE,
+                "ENDPOINT",
+                false,
+                true,
+                "Endpoint Offline",
+                "",
+                "",
+                List.of(),
+                AlertSeverity.WARNING,
+                0.0,
+                1.0,
+                dummyList
+        );
+
         evaluateAlertLifecycle(
                 computer,
                 AlertType.OFFLINE,
+                "ENDPOINT",
                 false,
                 true,
-                "Computer Endpoint Offline",
+                "Endpoint Offline",
                 "",
                 "",
                 List.of(),
@@ -271,6 +409,7 @@ public class AlertEngineServiceImpl implements AlertEngineService {
     private void evaluateAlertLifecycle(
             Computer computer,
             AlertType alertType,
+            String resourceKey,
             boolean isPersistentCondition,
             boolean isRecoveryCondition,
             String title,
@@ -282,14 +421,21 @@ public class AlertEngineServiceImpl implements AlertEngineService {
             Double thresholdValue,
             List<AlertDto> triggeredAlerts
     ) {
-        Optional<Alert> activeAlert = alertRepository.findFirstByComputerIdAndAlertTypeAndStatusIn(
-                computer.getId(), alertType, ACTIVE_STATUSES
+        // Query active incident by computerId + alertType + resourceKey + ACTIVE_STATUSES
+        Optional<Alert> activeAlert = alertRepository.findFirstByComputerIdAndAlertTypeAndResourceKeyAndStatusIn(
+                computer.getId(), alertType, resourceKey, ACTIVE_STATUSES
         );
 
-        // Check if administrator manually resolved an alert for this computer & alertType within the last 15 minutes
+        if (activeAlert.isEmpty()) {
+            activeAlert = alertRepository.findFirstByComputerIdAndAlertTypeAndStatusIn(
+                    computer.getId(), alertType, ACTIVE_STATUSES
+            );
+        }
+
+        // Check if administrator manually resolved an alert for this computer & alertType recently (snooze window: 15 min)
         Instant fifteenMinutesAgo = Instant.now().minus(15, ChronoUnit.MINUTES);
-        boolean recentlyResolvedByAdmin = alertRepository.existsByComputerIdAndAlertTypeAndStatusAndResolvedAtAfter(
-                computer.getId(), alertType, AlertStatus.RESOLVED, fifteenMinutesAgo
+        boolean recentlyResolvedByAdmin = alertRepository.existsByComputerIdAndAlertTypeAndResourceKeyAndStatusAndResolvedAtAfter(
+                computer.getId(), alertType, resourceKey, AlertStatus.RESOLVED, fifteenMinutesAgo
         );
 
         String evidenceJson = null;
@@ -304,12 +450,11 @@ public class AlertEngineServiceImpl implements AlertEngineService {
         if (isPersistentCondition) {
             if (activeAlert.isEmpty()) {
                 if (recentlyResolvedByAdmin) {
-                    // Admin manually resolved this incident recently -> Respect admin resolution & snooze re-triggering!
-                    log.debug("Alert {} for {} was recently resolved by admin. Respecting resolution.", alertType, computer.getHostname());
+                    log.debug("Alert {} ({}) for {} was recently resolved by admin. Respecting resolution.", alertType, resourceKey, computer.getHostname());
                     return;
                 }
 
-                // Persistent condition confirmed -> Create ONE active incident alert
+                // Persistent condition confirmed -> Create ONE active incident alert record (SINGLE INCIDENT PRINCIPLE)
                 Alert alert = Alert.builder()
                         .computer(computer)
                         .title(title)
@@ -318,6 +463,7 @@ public class AlertEngineServiceImpl implements AlertEngineService {
                         .evidenceJson(evidenceJson)
                         .severity(severity)
                         .alertType(alertType)
+                        .resourceKey(resourceKey)
                         .status(AlertStatus.OPEN)
                         .triggeredValue(triggeredValue)
                         .thresholdValue(thresholdValue)
@@ -328,7 +474,8 @@ public class AlertEngineServiceImpl implements AlertEngineService {
                         .build();
 
                 alert = alertRepository.save(alert);
-                log.info("[INFO] Persistent Alert Triggered [Type: {}, Computer: {}]: {}", alertType, computer.getHostname(), title);
+                log.info("[INFO] Persistent Degradation Alert Triggered [Type: {}, Resource: {}, Computer: {}]: {}",
+                        alertType, resourceKey, computer.getHostname(), title);
 
                 emailNotificationService.sendCriticalAlertEmail(alert);
                 triggeredAlerts.add(mapToDto(alert));
@@ -340,10 +487,12 @@ public class AlertEngineServiceImpl implements AlertEngineService {
                 existing.setTriggeredValue(triggeredValue);
                 if (evidenceJson != null) existing.setEvidenceJson(evidenceJson);
                 existing.setSeverity(severity);
-                
+                existing.setMessage(message);
+                existing.setResourceKey(resourceKey);
+
                 alertRepository.save(existing);
-                log.debug("[INFO] Updated active incident [Type: {}, Computer: {}] (Occurrences: {})",
-                        alertType, computer.getHostname(), existing.getOccurrenceCount());
+                log.debug("[INFO] Updated active incident [Type: {}, Resource: {}, Computer: {}] (Occurrences: {})",
+                        alertType, resourceKey, computer.getHostname(), existing.getOccurrenceCount());
             }
         } else if (isRecoveryCondition) {
             if (activeAlert.isPresent()) {
@@ -356,8 +505,8 @@ public class AlertEngineServiceImpl implements AlertEngineService {
                 }
                 alertRepository.save(alertToResolve);
 
-                log.info("[INFO] Alert Condition Recovered. Resolved incident [Type: {}, Computer: {}]",
-                        alertType, computer.getHostname());
+                log.info("[INFO] Alert Condition Recovered. Resolved active incident [Type: {}, Resource: {}, Computer: {}]",
+                        alertType, resourceKey, computer.getHostname());
 
                 emailNotificationService.sendAlertRecoveryEmail(alertToResolve);
             }
@@ -439,6 +588,7 @@ public class AlertEngineServiceImpl implements AlertEngineService {
                 .evidence(evidence)
                 .severity(alert.getSeverity().name())
                 .alertType(alert.getAlertType().name())
+                .resourceKey(alert.getResourceKey() != null ? alert.getResourceKey() : "SYSTEM")
                 .status(alert.getStatus().name())
                 .triggeredValue(alert.getTriggeredValue())
                 .thresholdValue(alert.getThresholdValue())

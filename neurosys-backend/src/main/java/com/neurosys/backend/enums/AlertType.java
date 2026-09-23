@@ -1,6 +1,12 @@
 package com.neurosys.backend.enums;
 
 public enum AlertType {
+    CPU_SUSTAINED_HIGH,
+    MEMORY_PRESSURE,
+    DISK_SPACE_LOW,
+    DISK_SPACE_CRITICAL,
+    ENDPOINT_OFFLINE,
+    TELEMETRY_STALE,
     HIGH_CPU,
     HIGH_RAM,
     HIGH_DISK,

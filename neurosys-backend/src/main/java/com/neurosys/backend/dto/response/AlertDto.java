@@ -26,6 +26,7 @@ public class AlertDto {
     private List<String> evidence;
     private String severity;
     private String alertType;
+    private String resourceKey;
     private String status;
     private Double triggeredValue;
     private Double thresholdValue;

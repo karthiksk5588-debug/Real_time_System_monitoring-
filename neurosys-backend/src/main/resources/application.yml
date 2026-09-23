@@ -46,6 +46,29 @@ neurosys:
     gemini:
       api-key: ${GEMINI_API_KEY:}
       model: ${GEMINI_MODEL:gemini-2.5-flash}
+  alerts:
+    cpu:
+      warning-threshold: ${CPU_WARNING_THRESHOLD:85.0}
+      warning-duration-seconds: ${CPU_WARNING_DURATION:300}
+      critical-threshold: ${CPU_CRITICAL_THRESHOLD:95.0}
+      critical-duration-seconds: ${CPU_CRITICAL_DURATION:600}
+      recovery-threshold: ${CPU_RECOVERY_THRESHOLD:75.0}
+    memory:
+      warning-threshold: ${MEMORY_WARNING_THRESHOLD:90.0}
+      warning-duration-seconds: ${MEMORY_WARNING_DURATION:300}
+      critical-threshold: ${MEMORY_CRITICAL_THRESHOLD:95.0}
+      critical-duration-seconds: ${MEMORY_CRITICAL_DURATION:600}
+      recovery-threshold: ${MEMORY_RECOVERY_THRESHOLD:80.0}
+      critical-free-mb: ${MEMORY_CRITICAL_FREE_MB:1024.0}
+    disk:
+      info-threshold: ${DISK_INFO_THRESHOLD:80.0}
+      warning-threshold: ${DISK_WARNING_THRESHOLD:90.0}
+      critical-threshold: ${DISK_CRITICAL_THRESHOLD:95.0}
+      urgent-threshold: ${DISK_URGENT_THRESHOLD:98.0}
+      recovery-threshold: ${DISK_RECOVERY_THRESHOLD:80.0}
+    offline:
+      warning-state-seconds: ${OFFLINE_WARNING_DURATION:60}
+      alert-duration-seconds: ${OFFLINE_CRITICAL_DURATION:300}
 
 telemetry:
   collection:
