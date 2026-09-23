@@ -11,6 +11,10 @@ if %errorlevel% neq 0 (
 
 cd /d "%~dp0"
 
+if not exist "%~dp0cache" mkdir "%~dp0cache" >nul 2>&1
+echo stopped > "%~dp0cache\stopped.flag"
+if exist "%~dp0cache\agent-status.json" del /f /q "%~dp0cache\agent-status.json" >nul 2>&1
+
 echo ===================================================
 echo  NeuroSys Agent Control - Stop
 echo ===================================================

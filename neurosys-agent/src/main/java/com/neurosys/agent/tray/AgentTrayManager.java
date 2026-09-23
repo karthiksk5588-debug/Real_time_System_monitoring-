@@ -126,7 +126,12 @@ public class AgentTrayManager {
 
     private void openDashboard() {
         try {
-            String url = "https://realtimesystemmonitoring-production.up.railway.app/";
+            String url = AgentConfig.getServerUrl();
+            if (url != null && url.contains("/api/v1")) {
+                url = url.replace("/api/v1", "/dashboard");
+            } else if (url == null || url.isEmpty() || url.contains("localhost")) {
+                url = "https://realtimesystemmonitoring-production-7322.up.railway.app/dashboard";
+            }
             if (Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.BROWSE)) {
                 Desktop.getDesktop().browse(new URI(url));
             } else {
@@ -140,6 +145,10 @@ public class AgentTrayManager {
     private void restartAgent() {
         try {
             log.info("[INFO] Tray user requested Agent restart...");
+            File stopFlag = new File("cache/stopped.flag");
+            if (stopFlag.exists()) {
+                stopFlag.delete();
+            }
             File currentDir = new File(".").getAbsoluteFile();
             File restartScript = new File("start-agent.bat");
             if (restartScript.exists()) {
@@ -156,11 +165,32 @@ public class AgentTrayManager {
         log.info("[INFO] User requested Agent shutdown. Terminating process...");
         removeTrayIcon();
         try {
-            File statusFile = new File("cache/agent-status.json");
+            File cacheDir = new File("cache");
+            if (!cacheDir.exists()) {
+                cacheDir.mkdirs();
+            }
+            File stopFlag = new File(cacheDir, "stopped.flag");
+            stopFlag.createNewFile();
+
+            File statusFile = new File(cacheDir, "agent-status.json");
             if (statusFile.exists()) {
                 statusFile.delete();
             }
-        } catch (Exception ignored) {}
+
+            String cleanCmd = "powershell -NoProfile -ExecutionPolicy Bypass -Command \"" +
+                    "try { Unregister-ScheduledTask -TaskName 'NeuroSysAgent' -Confirm:$false -ErrorAction SilentlyContinue } catch {}; " +
+                    "try { $u = [Environment]::GetFolderPath('Startup'); $uL = Join-Path $u 'NeuroSysAgent.lnk'; if (Test-Path $uL) { Remove-Item $uL -Force } } catch {}; " +
+                    "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*Run-NeuroSys-Agent*' -or $_.CommandLine -like '*Run-Silent*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }\"";
+
+            Runtime.getRuntime().exec(cleanCmd);
+        } catch (Exception e) {
+            log.warn("Error during stop cleanup: {}", e.getMessage());
+        }
+
+        try {
+            Thread.sleep(500);
+        } catch (InterruptedException ignored) {}
+
         System.exit(0);
     }
 

@@ -34,13 +34,16 @@ $PropsPath = Join-Path $ScriptDir "agent.properties"
 if (-not (Test-Path $PropsPath)) {
     $DefaultProps = @"
 # NeuroSys Monitoring Agent Production Configuration
-server.url=https://realtimesystemmonitoring-production.up.railway.app/api/v1
+server.url=https://realtimesystemmonitoring-production-7322.up.railway.app/api/v1
 agent.lab.name=Computer Lab
 agent.collection.interval.seconds=1
 agent.cache.dir=./cache
 "@
     Set-Content -Path $PropsPath -Value $DefaultProps -Encoding UTF8
 }
+
+$StopFlag = Join-Path $ScriptDir "cache\stopped.flag"
+if (Test-Path $StopFlag) { Remove-Item $StopFlag -Force -ErrorAction SilentlyContinue }
 
 # [2/5] Checking Java...
 Write-Host "[2/5] Checking Java..." -NoNewline

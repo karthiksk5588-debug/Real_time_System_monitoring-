@@ -25,6 +25,12 @@ public class AgentApplication {
         MetricsScheduler scheduler = new MetricsScheduler();
         scheduler.start();
 
+        // Register JVM Shutdown Hook
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            log.info("JVM shutdown initiated. Removing system tray icon...");
+            AgentTrayManager.getInstance().removeTrayIcon();
+        }));
+
         // Keep main service thread active
         try {
             Thread.currentThread().join();

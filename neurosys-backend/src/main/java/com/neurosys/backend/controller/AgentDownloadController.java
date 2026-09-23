@@ -72,7 +72,7 @@ public class AgentDownloadController {
             String propsContent = String.format(
                     "# NeuroSys Agent Configuration Package\n" +
                     "# Generated for: %s (%s)\n" +
-                    "server.url=https://realtimesystemmonitoring-production.up.railway.app/api/v1\n" +
+                    "server.url=https://realtimesystemmonitoring-production-7322.up.railway.app/api/v1\n" +
                     "agent.enrollment.code=%s\n" +
                     "agent.lab.name=%s\n" +
                     "agent.collection.interval.seconds=1\n",
@@ -99,6 +99,7 @@ public class AgentDownloadController {
                     "    if %errorlevel% equ 0 exit /b\r\n" +
                     ")\r\n" +
                     "cd /d \"%~dp0\"\r\n" +
+                    "if exist \"%~dp0cache\\stopped.flag\" del /f /q \"%~dp0cache\\stopped.flag\" >nul 2>&1\r\n" +
                     "echo ===================================================\r\n" +
                     "echo  NeuroSys Agent Control - Start\r\n" +
                     "echo ===================================================\r\n" +
@@ -164,11 +165,16 @@ public class AgentDownloadController {
                     "    if %errorlevel% equ 0 exit /b\r\n" +
                     ")\r\n" +
                     "cd /d \"%~dp0\"\r\n" +
+                    "if not exist \"%~dp0cache\" mkdir \"%~dp0cache\" >nul 2>&1\r\n" +
+                    "echo stopped > \"%~dp0cache\\stopped.flag\"\r\n" +
+                    "if exist \"%~dp0cache\\agent-status.json\" del /f /q \"%~dp0cache\\agent-status.json\" >nul 2>&1\r\n" +
                     "echo ===================================================\r\n" +
                     "echo  NeuroSys Agent Control - Stop\r\n" +
                     "echo ===================================================\r\n" +
                     "echo.\r\n" +
-                    "powershell -NoProfile -ExecutionPolicy Bypass -Command \"if (Get-ScheduledTask -TaskName 'NeuroSysAgent' -ErrorAction SilentlyContinue) { Stop-ScheduledTask -TaskName 'NeuroSysAgent' -ErrorAction SilentlyContinue }\" >nul 2>&1\r\n" +
+                    "powershell -NoProfile -ExecutionPolicy Bypass -Command \"if (Get-ScheduledTask -TaskName 'NeuroSysAgent' -ErrorAction SilentlyContinue) { Stop-ScheduledTask -TaskName 'NeuroSysAgent' -ErrorAction SilentlyContinue; Unregister-ScheduledTask -TaskName 'NeuroSysAgent' -Confirm:\\$false -ErrorAction SilentlyContinue }\" >nul 2>&1\r\n" +
+                    "powershell -NoProfile -ExecutionPolicy Bypass -Command \"$u = [Environment]::GetFolderPath('Startup'); $uL = Join-Path $u 'NeuroSysAgent.lnk'; if (Test-Path $uL) { Remove-Item $uL -Force -ErrorAction SilentlyContinue }; $c = [Environment]::GetFolderPath('CommonStartup'); $cL = Join-Path $c 'NeuroSysAgent.lnk'; if (Test-Path $cL) { Remove-Item $cL -Force -ErrorAction SilentlyContinue }\" >nul 2>&1\r\n" +
+                    "powershell -NoProfile -ExecutionPolicy Bypass -Command \"Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*Run-NeuroSys-Agent*' -or $_.CommandLine -like '*Run-Silent*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }\" >nul 2>&1\r\n" +
                     "powershell -NoProfile -ExecutionPolicy Bypass -Command \"$procs = Get-CimInstance Win32_Process | Where-Object { ($_.Name -eq 'java.exe' -or $_.Name -eq 'javaw.exe') -and $_.CommandLine -like '*neurosys-agent*' }; foreach ($p in $procs) { Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue }\" >nul 2>&1\r\n" +
                     "ping -n 3 127.0.0.1 >nul\r\n" +
                     "set \"STILL_RUNNING=0\"\r\n" +
@@ -323,6 +329,7 @@ public class AgentDownloadController {
                     "    set \"JAVA_EXE=%~dp0jre\\bin\\java.exe\"\r\n" +
                     ")\r\n" +
                     ":agent_loop\r\n" +
+                    "if exist \"%~dp0cache\\stopped.flag\" exit /b 0\r\n" +
                     "set \"ACTIVE_JAR=\"\r\n" +
                     "if exist \"%~dp0neurosys-agent-1.0.0-SNAPSHOT-exec.jar\" set \"ACTIVE_JAR=%~dp0neurosys-agent-1.0.0-SNAPSHOT-exec.jar\"\r\n" +
                     "if not defined ACTIVE_JAR if exist \"%~dp0neurosys-agent-1.0.0.jar\" set \"ACTIVE_JAR=%~dp0neurosys-agent-1.0.0.jar\"\r\n" +
@@ -332,9 +339,12 @@ public class AgentDownloadController {
                     "    \"%JAVA_EXE%\" -jar \"%ACTIVE_JAR%\"\r\n" +
                     ") else (\r\n" +
                     "    ping -n 10 127.0.0.1 >nul\r\n" +
+                    "    if exist \"%~dp0cache\\stopped.flag\" exit /b 0\r\n" +
                     "    goto agent_loop\r\n" +
                     ")\r\n" +
+                    "if exist \"%~dp0cache\\stopped.flag\" exit /b 0\r\n" +
                     "ping -n 6 127.0.0.1 >nul\r\n" +
+                    "if exist \"%~dp0cache\\stopped.flag\" exit /b 0\r\n" +
                     "goto agent_loop\r\n";
             writeZipEntry(zos, "Run-NeuroSys-Agent.bat", runBatContent.getBytes());
 

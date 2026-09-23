@@ -11,6 +11,8 @@ if %errorlevel% neq 0 (
 
 cd /d "%~dp0"
 
+if exist "%~dp0cache\stopped.flag" del /f /q "%~dp0cache\stopped.flag" >nul 2>&1
+
 echo ===================================================
 echo  NeuroSys Agent Control - Start
 echo ===================================================
