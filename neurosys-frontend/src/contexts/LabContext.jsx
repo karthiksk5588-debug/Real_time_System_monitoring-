@@ -37,7 +37,7 @@ export const LabProvider = ({ children }) => {
             if (parsed.id === 'ALL') {
               active = parsed;
             } else {
-              active = list.find(l => l.id === parsed.id) || parsed;
+              active = list.find(l => l.id === parsed.id) || null;
             }
           } catch (e) {}
         }
