@@ -126,7 +126,7 @@ public class AgentConfig {
             url = System.getProperty("server.url");
         }
         if (url == null || url.trim().isEmpty()) {
-            url = properties.getProperty("server.url", "https://realtimesystemmonitoring-production.up.railway.app/api/v1");
+            url = properties.getProperty("server.url", "https://realtimesystemmonitoring-production-7322.up.railway.app/api/v1");
         }
         url = url.trim();
         while (url.endsWith("/")) {
