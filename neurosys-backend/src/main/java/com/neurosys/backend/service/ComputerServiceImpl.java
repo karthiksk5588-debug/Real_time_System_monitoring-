@@ -16,6 +16,8 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Instant;
 import java.util.List;
 
+import com.neurosys.backend.dto.response.SystemMetricDto;
+
 @Service
 @RequiredArgsConstructor
 public class ComputerServiceImpl implements ComputerService {
@@ -23,6 +25,7 @@ public class ComputerServiceImpl implements ComputerService {
     private final ComputerRepository computerRepository;
     private final SystemMetricRepository systemMetricRepository;
     private final HealthScoreRepository healthScoreRepository;
+    private final SystemMetricsService systemMetricsService;
 
     @Override
     @Transactional(readOnly = true)
@@ -101,7 +104,7 @@ public class ComputerServiceImpl implements ComputerService {
     }
 
     private ComputerDto mapToDto(Computer computer) {
-        SystemMetric metric = systemMetricRepository.findLatestByComputerId(computer.getId()).orElse(null);
+        SystemMetricDto metric = systemMetricsService.getLatestMetric(computer.getId());
         HealthScore healthScore = healthScoreRepository.findLatestByComputerId(computer.getId()).orElse(null);
 
         boolean isLive = computer.getStatus() == ComputerStatus.ONLINE 
@@ -112,6 +115,16 @@ public class ComputerServiceImpl implements ComputerService {
         Double tx = metric != null && metric.getNetworkTxBytesSec() != null ? metric.getNetworkTxBytesSec() : 0.0;
         double totalBytesSec = rx + tx;
         double speedMbps = Math.round((totalBytesSec * 8.0 / 1_000_000.0) * 100.0) / 100.0;
+
+        Double cpu = isLive 
+                ? (computer.getLastCpuUsage() != null ? computer.getLastCpuUsage() : (metric != null ? metric.getCpuUsagePercent() : 0.0))
+                : (metric != null ? metric.getCpuUsagePercent() : null);
+        Double ram = isLive 
+                ? (computer.getLastRamUsage() != null ? computer.getLastRamUsage() : (metric != null ? metric.getMemoryUsagePercent() : 0.0))
+                : (metric != null ? metric.getMemoryUsagePercent() : null);
+        Double disk = isLive 
+                ? (computer.getLastDiskUsage() != null ? computer.getLastDiskUsage() : (metric != null ? metric.getDiskUsagePercent() : 0.0))
+                : (metric != null ? metric.getDiskUsagePercent() : null);
 
         return ComputerDto.builder()
                 .id(computer.getId())
@@ -133,17 +146,17 @@ public class ComputerServiceImpl implements ComputerService {
                 .internetConnected(isLive && computer.getInternetConnected() != null ? computer.getInternetConnected() : false)
                 .uptimeSeconds(computer.getUptimeSeconds() != null ? computer.getUptimeSeconds() : 0L)
                 .lastSeenAt(computer.getLastSeenAt())
-                .currentCpuUsage(isLive && computer.getLastCpuUsage() != null ? computer.getLastCpuUsage() : (metric != null ? metric.getCpuUsagePercent() : null))
-                .currentRamUsage(isLive && computer.getLastRamUsage() != null ? computer.getLastRamUsage() : (metric != null ? metric.getMemoryUsagePercent() : null))
-                .currentDiskUsage(isLive && computer.getLastDiskUsage() != null ? computer.getLastDiskUsage() : (metric != null ? metric.getDiskUsagePercent() : null))
+                .currentCpuUsage(cpu)
+                .currentRamUsage(ram)
+                .currentDiskUsage(disk)
                 .currentHealthScore(healthScore != null ? healthScore.getOverallScore() : 100.0)
                 .currentNetworkRxBytesSec(isLive ? rx : null)
                 .currentNetworkTxBytesSec(isLive ? tx : null)
                 .currentNetworkSpeedMbps(isLive ? speedMbps : null)
-                .lastRecordedCpuUsage(metric != null ? metric.getCpuUsagePercent() : null)
-                .lastRecordedRamUsage(metric != null ? metric.getMemoryUsagePercent() : null)
-                .lastRecordedDiskUsage(metric != null ? metric.getDiskUsagePercent() : null)
-                .lastRecordedAt(metric != null ? metric.getRecordedAt() : null)
+                .lastRecordedCpuUsage(metric != null ? metric.getCpuUsagePercent() : (computer.getLastCpuUsage() != null ? computer.getLastCpuUsage() : 0.0))
+                .lastRecordedRamUsage(metric != null ? metric.getMemoryUsagePercent() : (computer.getLastRamUsage() != null ? computer.getLastRamUsage() : 0.0))
+                .lastRecordedDiskUsage(metric != null ? metric.getDiskUsagePercent() : (computer.getLastDiskUsage() != null ? computer.getLastDiskUsage() : 0.0))
+                .lastRecordedAt(metric != null ? metric.getRecordedAt() : computer.getLastSeenAt())
                 .build();
     }
 }

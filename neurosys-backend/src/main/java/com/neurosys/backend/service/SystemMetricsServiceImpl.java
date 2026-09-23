@@ -216,6 +216,14 @@ public class SystemMetricsServiceImpl implements SystemMetricsService {
     @Override
     @Transactional(readOnly = true)
     public SystemMetricDto getLatestMetric(String computerId) {
+        Deque<SystemMetricDto> buffer = liveBufferMap.get(computerId);
+        if (buffer != null) {
+            synchronized (buffer) {
+                if (!buffer.isEmpty()) {
+                    return buffer.peekFirst();
+                }
+            }
+        }
         return systemMetricRepository.findLatestByComputerId(computerId)
                 .map(this::mapToDto)
                 .orElse(null);
