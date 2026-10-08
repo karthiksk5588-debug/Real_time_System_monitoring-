@@ -81,6 +81,23 @@ public class OfflineDetectionScheduler {
                         webSocketMetricsPublisher.broadcastStatusChange(c, ComputerStatus.WARNING,
                                 "Telemetry heartbeat delayed (>60s)");
                     }
+                } else {
+                    // Endpoint active within 60 seconds -> Restore to ONLINE if in WARNING or OFFLINE state
+                    if (c.getStatus() == ComputerStatus.WARNING || c.getStatus() == ComputerStatus.OFFLINE) {
+                        ComputerStatus oldStatus = c.getStatus();
+                        c.setStatus(ComputerStatus.ONLINE);
+                        c.setUpdatedAt(now);
+                        computerRepository.save(c);
+
+                        log.info("[REAL-TIME RESTORE] PC {} ({}) status auto-restored: {} → ONLINE (last seen {}s ago)",
+                                c.getHostname(), c.getAgentId(), oldStatus, offlineDurationSeconds);
+                        webSocketMetricsPublisher.broadcastStatusChange(c, ComputerStatus.ONLINE, "Telemetry heartbeat active");
+                        try {
+                            alertEngineService.resolveOfflineAlert(c);
+                        } catch (Exception e) {
+                            log.warn("Failed resolving offline alert for {}: {}", c.getHostname(), e.getMessage());
+                        }
+                    }
                 }
             }
         } catch (Exception e) {

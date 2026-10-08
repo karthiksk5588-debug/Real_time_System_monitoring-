@@ -141,7 +141,7 @@ public class SystemMetricsServiceImpl implements SystemMetricsService {
         ComputerStatus oldStatus = computer.getStatus();
         log.info("[INFO] Heartbeat received from {} (Agent: {})", computer.getHostname(), computer.getAgentId());
 
-        heartbeatTracker.updateHeartbeatTime(computer.getId());
+        heartbeatTracker.updateHeartbeatTime(computer.getId(), computer.getAgentId());
         computer.setLastSeenAt(now);
         if (request.getInternetConnected() != null) {
             computer.setInternetConnected(request.getInternetConnected());
@@ -154,7 +154,7 @@ public class SystemMetricsServiceImpl implements SystemMetricsService {
         double ram = request.getMemoryUsagePercent() != null ? request.getMemoryUsagePercent() : 0.0;
         double disk = request.getDiskUsagePercent() != null ? request.getDiskUsagePercent() : 0.0;
 
-        ComputerStatus newStatus = (oldStatus == ComputerStatus.OFFLINE || oldStatus == ComputerStatus.PENDING)
+        ComputerStatus newStatus = (oldStatus != ComputerStatus.ONLINE && oldStatus != ComputerStatus.REJECTED)
                 ? ComputerStatus.ONLINE
                 : oldStatus;
 
