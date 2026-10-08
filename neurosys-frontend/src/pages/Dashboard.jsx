@@ -102,9 +102,9 @@ const Dashboard = () => {
 
   // Real Database Counts derived strictly from live connected endpoints
   const totalAssets = computers.length;
-  const activeCount = computers.filter(c => c.status === 'ONLINE' || c.status === 'WARNING').length;
-  const criticalCount = computers.filter(c => c.status === 'CRITICAL' || c.status === 'OFFLINE').length;
-  const warningCount = computers.filter(c => c.status === 'WARNING').length;
+  const activeCount = computers.filter(c => c.status === 'ONLINE').length;
+  const criticalCount = computers.filter(c => c.status === 'OFFLINE').length;
+  const warningCount = computers.filter(c => c.status === 'WARNING' || c.status === 'CRITICAL').length;
 
   const readyCount = readinessData?.readyComputers ?? activeCount;
   const readinessPercent = totalAssets === 0 ? 0 : Math.round((readyCount / totalAssets) * 100);
@@ -235,8 +235,9 @@ const Dashboard = () => {
                 <tbody className="text-body-md font-body-md text-slate-800 divide-y divide-slate-200 font-medium">
                   {computers.length > 0 ? (
                     computers.map((comp) => {
-                      const cpu = Math.round(comp.currentCpuUsage ?? comp.lastRecordedCpuUsage ?? 0);
-                      const ram = Math.round(comp.currentRamUsage ?? comp.lastRecordedRamUsage ?? 0);
+                      const isOffline = comp.status === 'OFFLINE';
+                      const cpu = isOffline ? null : (comp.currentCpuUsage != null ? Math.round(comp.currentCpuUsage) : (comp.lastRecordedCpuUsage != null ? Math.round(comp.lastRecordedCpuUsage) : null));
+                      const ram = isOffline ? null : (comp.currentRamUsage != null ? Math.round(comp.currentRamUsage) : (comp.lastRecordedRamUsage != null ? Math.round(comp.lastRecordedRamUsage) : null));
                       const disk = Math.round(comp.currentDiskUsage ?? comp.lastRecordedDiskUsage ?? 0);
                       const isLaptop = comp.hostname === 'LAPTOP-PALBUQS2';
 
@@ -256,8 +257,8 @@ const Dashboard = () => {
                           >
                             {comp.hostname} {isLaptop ? '(Your Admin Laptop)' : ''}
                           </td>
-                          <td className="py-2.5 px-3 font-mono-sm font-bold text-primary">{cpu}%</td>
-                          <td className="py-2.5 px-3 font-mono-sm font-bold text-emerald-700">{ram}%</td>
+                          <td className="py-2.5 px-3 font-mono-sm font-bold text-primary">{cpu !== null ? `${cpu}%` : '--'}</td>
+                          <td className="py-2.5 px-3 font-mono-sm font-bold text-emerald-700">{ram !== null ? `${ram}%` : '--'}</td>
                           <td className="py-2.5 px-3 font-mono-sm font-bold text-slate-700">{disk}%</td>
                           <td className="py-2.5 px-3 text-right">
                             <button 

@@ -67,8 +67,8 @@ neurosys:
       urgent-threshold: ${DISK_URGENT_THRESHOLD:98.0}
       recovery-threshold: ${DISK_RECOVERY_THRESHOLD:80.0}
     offline:
-      warning-state-seconds: ${OFFLINE_WARNING_DURATION:60}
-      alert-duration-seconds: ${OFFLINE_CRITICAL_DURATION:300}
+      warning-state-seconds: ${OFFLINE_WARNING_DURATION:15}
+      alert-duration-seconds: ${OFFLINE_CRITICAL_DURATION:30}
 
 telemetry:
   collection:

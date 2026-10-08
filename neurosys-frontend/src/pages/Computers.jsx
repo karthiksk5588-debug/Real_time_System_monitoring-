@@ -382,8 +382,9 @@ const Computers = () => {
             <tbody className="divide-y divide-slate-200 font-body-md text-body-md text-slate-800 font-medium">
               {filteredComputers.length > 0 ? (
                 filteredComputers.map((comp) => {
-                  const cpu = Math.round(comp.currentCpuUsage ?? comp.lastRecordedCpuUsage ?? 0);
-                  const ram = Math.round(comp.currentRamUsage ?? comp.lastRecordedRamUsage ?? 0);
+                  const isOffline = comp.status === 'OFFLINE';
+                  const cpu = isOffline ? null : (comp.currentCpuUsage != null ? Math.round(comp.currentCpuUsage) : (comp.lastRecordedCpuUsage != null ? Math.round(comp.lastRecordedCpuUsage) : null));
+                  const ram = isOffline ? null : (comp.currentRamUsage != null ? Math.round(comp.currentRamUsage) : (comp.lastRecordedRamUsage != null ? Math.round(comp.lastRecordedRamUsage) : null));
                   const disk = Math.round(comp.currentDiskUsage ?? comp.lastRecordedDiskUsage ?? 0);
                   const isLaptop = comp.hostname === 'LAPTOP-PALBUQS2';
                   const isSelected = selectedIds.includes(comp.id);
@@ -428,8 +429,8 @@ const Computers = () => {
                         </div>
                       </td>
                       <td className="p-3 font-mono-sm text-slate-700 font-semibold">{comp.ipAddress || '10.33.199.161'}</td>
-                      <td className="p-3 font-mono-sm font-bold text-primary">{cpu}%</td>
-                      <td className="p-3 font-mono-sm font-bold text-emerald-700">{ram}%</td>
+                      <td className="p-3 font-mono-sm font-bold text-primary">{cpu !== null ? `${cpu}%` : '--'}</td>
+                      <td className="p-3 font-mono-sm font-bold text-emerald-700">{ram !== null ? `${ram}%` : '--'}</td>
                       <td className="p-3 font-mono-sm font-bold text-slate-700">{disk}%</td>
                       <td className="p-3 text-right">
                         <div className="flex items-center justify-end gap-1.5">

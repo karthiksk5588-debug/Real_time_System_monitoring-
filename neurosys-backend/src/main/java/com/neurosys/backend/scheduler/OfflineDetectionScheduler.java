@@ -63,23 +63,29 @@ public class OfflineDetectionScheduler {
                         log.info("[OFFLINE DETECT] PC {} ({}) missed heartbeat (>{}s). Status {} → OFFLINE",
                                 c.getHostname(), c.getAgentId(), alertDurationSec, oldStatus);
                         c.setStatus(ComputerStatus.OFFLINE);
+                        c.setLastCpuUsage(0.0);
+                        c.setLastRamUsage(0.0);
+                        c.setInternetConnected(false);
                         c.setUpdatedAt(now);
                         computerRepository.save(c);
 
-                        webSocketMetricsPublisher.broadcastStatusChange(c, ComputerStatus.OFFLINE,
-                                String.format("Telemetry heartbeat stopped for %d minutes", offlineDurationSeconds / 60));
+                        String offlineMsg = offlineDurationSeconds >= 60
+                                ? String.format("Telemetry heartbeat stopped for %d minutes", offlineDurationSeconds / 60)
+                                : String.format("Telemetry heartbeat stopped (%ds ago)", offlineDurationSeconds);
+
+                        webSocketMetricsPublisher.broadcastStatusChange(c, ComputerStatus.OFFLINE, offlineMsg);
                     }
 
                     alertEngineService.triggerOfflineAlert(c, offlineDurationSeconds);
                 } else if (offlineDurationSeconds >= warningStateSec) {
-                    // Endpoint missed heartbeat for >= 60 seconds -> Mark Warning state
+                    // Endpoint missed heartbeat for >= warningStateSec -> Mark Warning state
                     if (c.getStatus() == ComputerStatus.ONLINE) {
                         c.setStatus(ComputerStatus.WARNING);
                         c.setUpdatedAt(now);
                         computerRepository.save(c);
 
                         webSocketMetricsPublisher.broadcastStatusChange(c, ComputerStatus.WARNING,
-                                "Telemetry heartbeat delayed (>60s)");
+                                String.format("Telemetry heartbeat delayed (>%ds)", warningStateSec));
                     }
                 } else {
                     // Endpoint active within 60 seconds -> Restore to ONLINE if in WARNING or OFFLINE state

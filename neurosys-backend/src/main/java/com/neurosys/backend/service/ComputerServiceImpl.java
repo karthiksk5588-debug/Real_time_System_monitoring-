@@ -118,13 +118,11 @@ public class ComputerServiceImpl implements ComputerService {
 
         Double cpu = isLive 
                 ? (computer.getLastCpuUsage() != null ? computer.getLastCpuUsage() : (metric != null ? metric.getCpuUsagePercent() : 0.0))
-                : (metric != null ? metric.getCpuUsagePercent() : null);
+                : null;
         Double ram = isLive 
                 ? (computer.getLastRamUsage() != null ? computer.getLastRamUsage() : (metric != null ? metric.getMemoryUsagePercent() : 0.0))
-                : (metric != null ? metric.getMemoryUsagePercent() : null);
-        Double disk = isLive 
-                ? (computer.getLastDiskUsage() != null ? computer.getLastDiskUsage() : (metric != null ? metric.getDiskUsagePercent() : 0.0))
-                : (metric != null ? metric.getDiskUsagePercent() : null);
+                : null;
+        Double disk = metric != null ? metric.getDiskUsagePercent() : (computer.getLastDiskUsage() != null ? computer.getLastDiskUsage() : 0.0);
 
         return ComputerDto.builder()
                 .id(computer.getId())
@@ -144,12 +142,12 @@ public class ComputerServiceImpl implements ComputerService {
                 .agentVersion(computer.getAgentVersion())
                 .status(computer.getStatus().name())
                 .internetConnected(isLive && computer.getInternetConnected() != null ? computer.getInternetConnected() : false)
-                .uptimeSeconds(computer.getUptimeSeconds() != null ? computer.getUptimeSeconds() : 0L)
+                .uptimeSeconds(isLive && computer.getUptimeSeconds() != null ? computer.getUptimeSeconds() : 0L)
                 .lastSeenAt(computer.getLastSeenAt())
                 .currentCpuUsage(cpu)
                 .currentRamUsage(ram)
                 .currentDiskUsage(disk)
-                .currentHealthScore(healthScore != null ? healthScore.getOverallScore() : 100.0)
+                .currentHealthScore(isLive ? (healthScore != null ? healthScore.getOverallScore() : 100.0) : 0.0)
                 .currentNetworkRxBytesSec(isLive ? rx : null)
                 .currentNetworkTxBytesSec(isLive ? tx : null)
                 .currentNetworkSpeedMbps(isLive ? speedMbps : null)
